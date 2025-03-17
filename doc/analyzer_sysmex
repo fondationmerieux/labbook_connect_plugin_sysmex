@@ -1,0 +1,21 @@
+# Analyzer Configuration File
+# Contains general settings and connection details for one ROCHE analyzer.
+
+version = "0.8.0"  # Configuration file version
+
+[analyzer]
+brand = "SYSMEX"                   			# Analyzer brand
+name = "XP"                    	 	     	# Analyzer model name
+id = "XP_01"                     			# Unique analyzer identifier
+plugin = "AnalyzerSysmex"               	# Plugin Java class name for this analyzer
+url_lis = "http://url_server_labbook/sigl"	# URL of the Laboratory Information System (LIS) upstream endpoint
+operation_mode = "batch"          			# Operation mode (batch or query)
+archive_msg = "Y"                 			# Enable ('Y') or disable ('N') message archiving
+type_cnx = "socket"               			# Connection type (socket, ...)
+type_msg = "ASTM"                  			# Message type (HL7 or ASTM)
+mapping = "/storage/resource/connect/analyzer/mapping/mapping_sysmex"  # Mapping configuration to use
+
+[analyzer.socket]
+mode = "client"                   # Socket mode (client or server)
+ip = "IP_ADDRESS_TO_ENTER"        # Analyzer IP address
+port = PORT_NUMBER_TO_ENTER       # Port number for socket communication
