@@ -41,7 +41,7 @@ public class AnalyzerSysmex implements Analyzer {
 	
 	private static final Logger logger = LoggerFactory.getLogger(AnalyzerSysmex.class); // Uses Connect's logback.xml
 	
-	private final String jar_version = "0.9.1";
+	private final String jar_version = "0.9.2";
 
     // === General Configuration ===
     protected String version = "";
@@ -1091,6 +1091,7 @@ public class AnalyzerSysmex implements Analyzer {
         while (true) {
             try (ServerSocket serverSocket = new ServerSocket(port_analyzer)) {
                 logger.info("ASTM Server started on port {}", port_analyzer);
+                this.listening.set(true);
 
                 while (true) {
                     try (Socket clientSocket = serverSocket.accept()) {
@@ -1098,17 +1099,19 @@ public class AnalyzerSysmex implements Analyzer {
                         this.socket = clientSocket;
                         this.inputStream = clientSocket.getInputStream();
                         this.outputStream = clientSocket.getOutputStream();
-                        this.listening.set(true);
                         listenForIncomingMessages();
                     } catch (IOException ioEx) {
                         logger.error("ERROR: Client handling failed: {}", ioEx.getMessage(), ioEx);
                     } finally {
                         this.listening.set(false);
-                        this.socket = null; this.inputStream = null; this.outputStream = null;
+                        this.socket = null; 
+                        this.inputStream = null; 
+                        this.outputStream = null;
                         logger.info("Client connection closed.");
                     }
                 }
             } catch (IOException startEx) {
+            	this.listening.set(false);
                 logger.error("ERROR: Failed to start ASTM server on port {}: {}", port_analyzer, startEx.getMessage());
                 logger.info("Retrying in 10000 ms...");
                 try { Thread.sleep(10000); } catch (InterruptedException ie) {
@@ -1283,7 +1286,9 @@ public class AnalyzerSysmex implements Analyzer {
 
             } catch (IOException ioEx) {
                 // STEP 7: Fatal I/O — stop listening on this socket
-                this.listening.set(false);
+            	if ("client".equalsIgnoreCase(this.mode)) {
+                    this.listening.set(false);
+                }
                 logger.error("Exception in listenForIncomingMessages (ASTM): {}", ioEx.getMessage(), ioEx);
             }
         }
