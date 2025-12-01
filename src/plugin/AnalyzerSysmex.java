@@ -60,6 +60,7 @@ public class AnalyzerSysmex implements Analyzer {
 
     // === Runtime State ===
     protected AtomicBoolean listening = new AtomicBoolean(false);
+    private ServerSocket serverSocket;
     private Socket socket;
     private InputStream inputStream;
     private OutputStream outputStream;
@@ -764,7 +765,7 @@ public class AnalyzerSysmex implements Analyzer {
             // Fill QPD segment (Query Parameter Definition)
             QPD qpd = qbp.getQPD();
             qpd.getMessageQueryName().getIdentifier().setValue("LAB-27^IHE");
-            qpd.getQueryTag().setValue("GENEXPERT");
+            qpd.getQueryTag().setValue("SYSMEX");
 
             // Use ASTM field[2] as specimen ID if available
             if (fields.length > 2) {
@@ -1018,7 +1019,9 @@ public class AnalyzerSysmex implements Analyzer {
     			int backoffDelayMs = 5000;   // initial 5s
     			final int backoffMaxMs = 60000;  // cap 60s
 
-    			while (true) {
+    			this.listening.set(true);
+    			
+    		    while (this.listening.get()) {
     				try {
     					// Step 3: open socket
     					connectAsClient();
@@ -1088,13 +1091,16 @@ public class AnalyzerSysmex implements Analyzer {
      * Starts an ASTM server that listens for incoming ASTM messages.
      */
     private void startASTMServer() {
-        while (true) {
-            try (ServerSocket serverSocket = new ServerSocket(port_analyzer)) {
-                logger.info("ASTM Server started on port {}", port_analyzer);
+    	this.listening.set(true);
+        while (this.listening.get()) {
+            try {
+            	this.serverSocket = new ServerSocket(this.port_analyzer);
+                logger.info("ASTM Server started on port {}", this.port_analyzer);
                 this.listening.set(true);
 
                 while (true) {
-                    try (Socket clientSocket = serverSocket.accept()) {
+                	if (!this.listening.get()) break;
+                    try (Socket clientSocket = this.serverSocket.accept()) {
                         logger.info("Accepted connection from {}", clientSocket.getInetAddress());
                         this.socket = clientSocket;
                         this.inputStream = clientSocket.getInputStream();
@@ -1103,7 +1109,6 @@ public class AnalyzerSysmex implements Analyzer {
                     } catch (IOException ioEx) {
                         logger.error("ERROR: Client handling failed: {}", ioEx.getMessage(), ioEx);
                     } finally {
-                        this.listening.set(false);
                         this.socket = null; 
                         this.inputStream = null; 
                         this.outputStream = null;
@@ -1111,13 +1116,20 @@ public class AnalyzerSysmex implements Analyzer {
                     }
                 }
             } catch (IOException startEx) {
-            	this.listening.set(false);
-                logger.error("ERROR: Failed to start ASTM server on port {}: {}", port_analyzer, startEx.getMessage());
-                logger.info("Retrying in 10000 ms...");
-                try { Thread.sleep(10000); } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    logger.error("ERROR: Server retry interrupted.");
-                    break;
+                this.listening.set(false);
+                try { if (this.socket != null) this.socket.close(); } catch (IOException ignore) {}
+                this.socket = null;
+                logger.error("ERROR: Failed to start ASTM server on port {}: {}", this.port_analyzer, startEx.getMessage());
+                break;
+            } finally {
+                try {
+                    if (this.serverSocket != null && !this.serverSocket.isClosed()) {
+                        this.serverSocket.close();
+                    }
+                } catch (IOException e) {
+                    logger.warn("Error while closing serverSocket in finally: " + e.getMessage(), e);
+                } finally {
+                    this.serverSocket = null;
                 }
             }
         }
@@ -1157,7 +1169,13 @@ public class AnalyzerSysmex implements Analyzer {
      * Blocking; runs while `listening` is true.
      */
     private void listenForIncomingMessages() {
-        while (this.listening.get()) {
+        while (this.socket != null && !this.socket.isClosed()) {
+        	
+        	if (!this.listening.get()) {
+                logger.info("Listening flag is false, exiting listener loop.");
+                break;
+            }
+        	
             try {
                 // STEP 1: Wait for ENQ (15s)
                 socket.setSoTimeout(15000);
@@ -1286,10 +1304,20 @@ public class AnalyzerSysmex implements Analyzer {
 
             } catch (IOException ioEx) {
                 // STEP 7: Fatal I/O — stop listening on this socket
-            	if ("client".equalsIgnoreCase(this.mode)) {
-                    this.listening.set(false);
-                }
+                this.listening.set(false);
                 logger.error("Exception in listenForIncomingMessages (ASTM): {}", ioEx.getMessage(), ioEx);
+                try {
+                    if (this.socket != null && !this.socket.isClosed()) {
+                        this.socket.close();
+                    }
+                } catch (IOException ignore) {
+                    // ignore
+                } finally {
+                    this.socket = null;
+                    this.inputStream = null;
+                    this.outputStream = null;
+                }
+                break;
             }
         }
     }
@@ -1380,6 +1408,33 @@ public class AnalyzerSysmex implements Analyzer {
         return msg;
     }
     
+    @Override
+    public void stopListening() {
+        listening.set(false);
+
+        try {
+            if (this.socket != null && !this.socket.isClosed()) {
+                this.socket.close();
+            }
+        } catch (IOException e) {
+            logger.warn("stopListening: error while closing client socket: " + e.getMessage(), e);
+        } finally {
+            this.socket = null;
+            this.inputStream = null;
+            this.outputStream = null;
+        }
+
+        try {
+            if (this.serverSocket != null && !this.serverSocket.isClosed()) {
+                this.serverSocket.close();
+            }
+        } catch (IOException e) {
+            logger.warn("stopListening: error while closing server socket: " + e.getMessage(), e);
+        } finally {
+        	this.serverSocket = null;
+        }
+    }
+    
     // === utility function ===
 
     /**
@@ -1392,7 +1447,6 @@ public class AnalyzerSysmex implements Analyzer {
             return "";
         }
     }
-    
     
     /**
      * Splits a raw ASTM message into lines using CR/LF normalization,
