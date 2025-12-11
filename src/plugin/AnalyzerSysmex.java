@@ -41,7 +41,7 @@ public class AnalyzerSysmex implements Analyzer {
 	
 	private static final Logger logger = LoggerFactory.getLogger(AnalyzerSysmex.class); // Uses Connect's logback.xml
 	
-	private final String jar_version = "0.9.2";
+	private final String jar_version = "0.9.3";
 
     // === General Configuration ===
     protected String version = "";
@@ -332,6 +332,14 @@ public class AnalyzerSysmex implements Analyzer {
 
             // Split the ASTM message into individual lines
             String[] astmLines = logAndSplitAstm(msg);
+
+            // Extract sample ID and handle Background Check case
+            String sampleId = extractSampleIdFromAstmLines(astmLines);
+            if (isBackgroundCheckSample(sampleId)) {
+                logger.info("Lab29 Sysmex : BACKGROUNDCHECK sample detected for ID '" + sampleId + "', message archived, HL7 conversion and upstream send skipped");
+                // ASTM positive termination so that the analyzer does not repeat or raise an error
+                return "L|1|Y";
+            }
 
             // Convert ASTM to HL7 OUL^R22
             String hl7Message = convertASTMtoOUL_R22(astmLines);
@@ -1166,29 +1174,41 @@ public class AnalyzerSysmex implements Analyzer {
      * - STEP 4: ACK/NAK each frame
      * - STEP 5: On EOT, dispatch to LAB-27/LAB-29 and optionally turnaround reply
      *
-     * Blocking; runs while `listening` is true.
+     * This method handles ONE connection. It must NOT change the listening flag
+     * and must NOT close the server socket, so that startASTMServer() can keep
+     * accepting new clients.
      */
     private void listenForIncomingMessages() {
+        // One connection loop: break to return to startASTMServer()
         while (this.socket != null && !this.socket.isClosed()) {
-        	
-        	if (!this.listening.get()) {
-                logger.info("Listening flag is false, exiting listener loop.");
+
+            if (!this.listening.get()) {
+                logger.info("Listening flag is false, exiting listener loop for current connection.");
                 break;
             }
-        	
+
             try {
                 // STEP 1: Wait for ENQ (15s)
                 socket.setSoTimeout(15000);
-                int firstByte = inputStream.read();
-                if (firstByte == -1) {
-                    logger.info("Stream closed by peer during ENQ wait. Exiting listener.");
-                    this.listening.set(false);
-                    break;
+
+                int firstByte;
+                try {
+                    firstByte = inputStream.read();
+                } catch (SocketTimeoutException ste) {
+                    logger.warn("No data received within 15000 ms while waiting for ENQ — continuing to wait on same connection.");
+                    continue;
                 }
+
+                if (firstByte == -1) {
+                    logger.info("Stream closed by peer during ENQ wait. Ending current connection listener.");
+                    break; // end this connection, server loop will accept a new one
+                }
+
                 logger.info("<<< DEBUG BYTE 0x{} ({})", String.format("%02X", firstByte), printable(firstByte));
                 if (firstByte != ENQ) {
                     logger.warn("Expected ENQ but received: {}", printable(firstByte));
-                    continue; // keep waiting for a proper ENQ
+                    // Ignore noise and keep waiting for a proper ENQ on the same connection
+                    continue;
                 }
 
                 // STEP 2: ACK the ENQ to start the transfer
@@ -1202,37 +1222,47 @@ public class AnalyzerSysmex implements Analyzer {
                 framesLoop:
                 while (true) {
                     int b = inputStream.read();
-                    if (b == -1) throw new IOException("Stream closed while waiting for STX/EOT");
+                    if (b == -1) {
+                        logger.info("Stream closed by peer while waiting for STX/EOT. Ending current connection listener.");
+                        break framesLoop;
+                    }
                     logger.info("<<< DEBUG BYTE 0x{} ({})", String.format("%02X", b), printable(b));
 
-                    // STEP 3.1: End of transmission?
+                    // End of transmission?
                     if (b == EOT) {
                         logger.info("<<< Received EOT — message transmission complete");
                         break framesLoop;
                     }
 
-                    // STEP 3.2: Expect STX to begin a frame
+                    // Expect STX to begin a frame
                     if (b != STX) {
                         logger.warn("Expected STX or EOT, got: {}", printable(b));
-                        continue; // ignore noise and keep reading
+                        // ignore noise, continue reading on same connection
+                        continue;
                     }
 
-                    // STEP 3.3: Read frame number (ASCII '0'..'7' typically)
+                    // Read frame number
                     int frameNo = inputStream.read();
-                    if (frameNo < 0) throw new IOException("Frame aborted: missing frame number after STX");
+                    if (frameNo < 0) {
+                        throw new IOException("Frame aborted: missing frame number after STX");
+                    }
 
-                    // STEP 3.4: Read payload up to ETX or ETB (terminator not included in payload)
+                    // Read payload up to ETX or ETB
                     ByteArrayOutputStream frameContent = new ByteArrayOutputStream();
                     int c;
                     while (true) {
                         c = inputStream.read();
-                        if (c < 0) throw new IOException("Frame aborted: stream closed before ETX/ETB");
-                        if (c == ETX || c == ETB) break; // end of text for this frame
+                        if (c < 0) {
+                            throw new IOException("Frame aborted: stream closed before ETX/ETB");
+                        }
+                        if (c == ETX || c == ETB) {
+                            break;
+                        }
                         frameContent.write(c);
                     }
-                    byte terminator = (byte) c; // ETX (final) or ETB (more frames follow)
+                    byte terminator = (byte) c; // ETX (final) or ETB (more frames)
 
-                    // STEP 3.5: Read checksum (2 ASCII hex) + CR + LF
+                    // Read checksum (2 ASCII hex) + CR + LF
                     int c1 = inputStream.read();
                     int c2 = inputStream.read();
                     int cr = inputStream.read();
@@ -1245,37 +1275,35 @@ public class AnalyzerSysmex implements Analyzer {
                     }
                     String receivedChecksum = "" + (char) c1 + (char) c2;
 
-                    // STEP 3.6: Compute checksum over [frameNo + payload + terminator]
+                    // Compute checksum over [frameNo + payload + terminator]
                     int sum = (frameNo & 0xFF);
                     byte[] payloadBytes = frameContent.toByteArray();
-                    for (byte pb : payloadBytes) sum += (pb & 0xFF);
+                    for (byte pb : payloadBytes) {
+                        sum += (pb & 0xFF);
+                    }
                     sum += (terminator & 0xFF);
                     sum &= 0xFF;
                     String expectedChecksum = String.format("%02X", sum);
 
-                    // STEP 3.7: ACK/NAK the frame based on checksum validity
+                    // ACK/NAK based on checksum
                     if (!receivedChecksum.equalsIgnoreCase(expectedChecksum)) {
                         logger.warn("Checksum mismatch: expected {} but got {}", expectedChecksum, receivedChecksum);
                         outputStream.write(ASTM_NAK);
                         outputStream.flush();
-                        // Wait for retransmission of the same frame; do not append to assembly
+                        // Wait for retransmission of the same frame; do not append
                         continue;
                     } else {
                         outputStream.write(ASTM_ACK);
                         outputStream.flush();
                     }
 
-                    // STEP 3.8: Append frame payload into the assembled message (NO extra delimiter here)
-                    // The payload already contains CR between ASTM records; frames can split a record arbitrarily.
-                    // Do NOT inject CR here, or you will break records that continue in the next frame.
+                    // Append frame payload; payload already contains CR between ASTM records
                     assembledMessage.write(payloadBytes);
 
-                    // NOTE: If terminator == ETB, there will be continuation frames before EOT.
-                    // We keep looping: next expected bytes are STX ... until EOT arrives.
+                    // If terminator == ETB, we expect more frames before EOT
                 }
-                
-                // STEP 4: Build full ASTM message string
-                // Normalize assembled bytes to String; collapse CRLF to CR defensively.
+
+                // Build full ASTM message string
                 byte[] assembled = assembledMessage.toByteArray();
                 String astmMessage = new String(assembled, StandardCharsets.US_ASCII)
                         .replace("\r\n", "\r")
@@ -1283,42 +1311,47 @@ public class AnalyzerSysmex implements Analyzer {
 
                 if (astmMessage.isEmpty()) {
                     logger.warn("Empty ASTM message received — ignored.");
+                    // Go back to waiting for a new ENQ on same connection
                     continue;
                 }
                 logger.info("DEBUG: Complete ASTM message:\n{}", astmMessage.replace("\r", "\n"));
 
-                // STEP 5: Dispatch to LAB-27/LAB-29; if response produced, do ASTM turnaround send
+                // Dispatch LAB-27 / LAB-29
                 String responseMessage = processAnalyzerMsg(astmMessage);
                 if (responseMessage != null && !responseMessage.isEmpty()) {
                     logger.info(">>> Sending ASTM response (turnaround):\n{}", responseMessage.replace("\r", "\n"));
-                    String[] responseLines = responseMessage.replaceAll("[\\u000d\\u000a]+", "\n").split("\n");
+                    String[] responseLines = responseMessage
+                            .replaceAll("[\\u000d\\u000a]+", "\n")
+                            .split("\n");
                     sendASTMMessage(responseLines); // ENQ → ACK → frames → EOT
                 } else {
                     logger.warn("No response generated for received ASTM message.");
                 }
 
-            } catch (SocketTimeoutException timeoutEx) {
-                // STEP 6: No byte received in the window — keep waiting
-                logger.warn("No data received within 15000 ms — continuing to wait...");
-                continue;
+                // After one full exchange, we just loop back and wait again for ENQ on same socket.
+                // If the peer closes, read() will return -1 and we break out above.
 
+            } catch (SocketTimeoutException timeoutEx) {
+                logger.warn("No data received within 15000 ms — continuing to wait on current connection...");
+                // continue; keep connection open and wait again
             } catch (IOException ioEx) {
-                // STEP 7: Fatal I/O — stop listening on this socket
-                this.listening.set(false);
-                logger.error("Exception in listenForIncomingMessages (ASTM): {}", ioEx.getMessage(), ioEx);
-                try {
-                    if (this.socket != null && !this.socket.isClosed()) {
-                        this.socket.close();
-                    }
-                } catch (IOException ignore) {
-                    // ignore
-                } finally {
-                    this.socket = null;
-                    this.inputStream = null;
-                    this.outputStream = null;
-                }
+                logger.error("Exception in listenForIncomingMessages (ASTM) on current connection: {}", ioEx.getMessage(), ioEx);
+                // Stop handling this client, let startASTMServer() accept a new one
                 break;
             }
+        }
+
+        // Clean client-side resources only; serverSocket is managed by startASTMServer()/stopListening()
+        try {
+            if (this.socket != null && !this.socket.isClosed()) {
+                this.socket.close();
+            }
+        } catch (IOException ignore) {
+            // ignore
+        } finally {
+            this.socket = null;
+            this.inputStream = null;
+            this.outputStream = null;
         }
     }
 
@@ -1436,6 +1469,45 @@ public class AnalyzerSysmex implements Analyzer {
     }
     
     // === utility function ===
+    
+    /**
+     * Extracts the specimen/sample ID from the first O|1| record of an ASTM message.
+     * Handles optional numeric record prefixes like "1O|...".
+     *
+     * @param lines ASTM lines (already split and normalized)
+     * @return Sample ID (e.g. "20359", "BACKGROUNDCHECK"), or null if not found
+     */
+    private String extractSampleIdFromAstmLines(String[] lines) {
+        for (String rawLine : lines) {
+            // Remove optional leading record number (e.g. "1O|" -> "O|")
+            String line = rawLine.replaceFirst("^[0-7](?=[A-Z]\\|)", "");
+            if (line.startsWith("O|1|")) {
+                String[] fields = line.split("\\|", -1);
+                if (fields.length > 3) {
+                    // fields[3] is usually "^^<SampleID>^A" for Sysmex
+                    String orderField = fields[3];
+                    String[] comps = orderField.split("\\^", -1);
+                    if (comps.length > 2) {
+                        return comps[2].trim();
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Returns true if the given sample ID corresponds to a Sysmex Background Check.
+     *
+     * @param sampleId Sample ID extracted from O-record
+     * @return true if this is a Background Check sample
+     */
+    private boolean isBackgroundCheckSample(String sampleId) {
+        if (sampleId == null) {
+            return false;
+        }
+        return "BACKGROUNDCHECK".equalsIgnoreCase(sampleId.trim());
+    }
 
     /**
      * Safely extracts value from a primitive ST field (e.g., OBR-4 test name).
