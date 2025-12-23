@@ -18,6 +18,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.moandjiezana.toml.Toml;
+
 import ca.uhn.hl7v2.HL7Exception;
 import ca.uhn.hl7v2.parser.PipeParser;
 import ca.uhn.hl7v2.model.Message;
@@ -41,7 +43,7 @@ public class AnalyzerSysmex implements Analyzer {
 	
 	private static final Logger logger = LoggerFactory.getLogger(AnalyzerSysmex.class); // Uses Connect's logback.xml
 	
-	private final String jar_version = "0.9.3";
+	private final String jar_version = "0.9.4";
 
     // === General Configuration ===
     protected String version = "";
@@ -57,6 +59,8 @@ public class AnalyzerSysmex implements Analyzer {
     protected String mode = "";
     protected String ip_analyzer = "";
     protected int port_analyzer = 0;
+    protected String mappingPath = "";
+    protected Toml mappingToml = new Toml();
 
     // === Runtime State ===
     protected AtomicBoolean listening = new AtomicBoolean(false);
@@ -170,6 +174,7 @@ public class AnalyzerSysmex implements Analyzer {
         newAnalyzer.setMode(this.mode);
         newAnalyzer.setIp_analyzer(this.ip_analyzer);
         newAnalyzer.setPort_analyzer(this.port_analyzer);
+        newAnalyzer.setMappingPath(this.mappingPath);
         return newAnalyzer;
     }
 
@@ -180,11 +185,11 @@ public class AnalyzerSysmex implements Analyzer {
     
     @Override
     public String info() {
-        return String.format(
-            "Analyzer Info: [Jar=%s, Version=%s, ID=%s, Lab27=%s, Lab29=%s, TypeCnx=%s, TypeMsg=%s, ArchiveMsg=%s, OperationMode=%s, Mode=%s, IP=%s, Port=%d]",
-            this.jar_version, this.version, this.id_analyzer, this.url_upstream_lab27, this.url_upstream_lab29,
-            this.type_cnx, this.type_msg, this.archive_msg, this.operation_mode, this.mode, this.ip_analyzer, this.port_analyzer
-        );
+    	return String.format(
+    			"Analyzer Info: [Jar=%s, Version=%s, ID=%s, Lab27=%s, Lab29=%s, TypeCnx=%s, TypeMsg=%s, ArchiveMsg=%s, MappingPath=%s, OperationMode=%s, Mode=%s, IP=%s, Port=%d]",
+    			this.jar_version, this.version, this.id_analyzer, this.url_upstream_lab27, this.url_upstream_lab29,
+    			this.type_cnx, this.type_msg, this.archive_msg, this.mappingPath, this.operation_mode, this.mode, this.ip_analyzer, this.port_analyzer
+    			);
     }
 
     @Override
@@ -656,19 +661,101 @@ public class AnalyzerSysmex implements Analyzer {
                         String operatorId = (fields.length > 10) ? fields[10] : "";
                         String tsEnd      = (fields.length > 12) ? fields[12] : "";
 
+                        // Mapping: vendor_result_code = raw analyte field (ASTM R|2)
+                        String vendorResultCode = (analyte == null) ? "" : analyte.trim();
+
+                        String lisResultCode = "";
+                        String lisUnit = "";
+                        String convert = "none";
+                        double factor = 0.0;
+
+                        List<Toml> maps = mappingToml.getTables("ivd_mapping");
+                        if (maps != null && !vendorResultCode.isEmpty()) {
+                            for (Toml m : maps) {
+                                String vrc = m.getString("vendor_result_code");
+                                if (vrc == null) continue;
+
+                                // Allow "test" to be absent/empty in Sysmex mappings (global mapping)
+                                String t = m.getString("test");
+                                boolean testOk = (t == null || t.trim().isEmpty());
+
+                                if (testOk && vrc.trim().equals(vendorResultCode)) {
+                                    String lrc = m.getString("lis_result_code");
+                                    lisResultCode = (lrc == null) ? "" : lrc.trim();
+
+                                    String lu = m.getString("lis_unit");
+                                    lisUnit = (lu == null) ? "" : lu.trim();
+
+                                    String cv = m.getString("convert");
+                                    convert = (cv == null) ? "none" : cv.trim();
+
+                                    Double f = m.getDouble("factor");
+                                    factor = (f == null) ? 0.0 : f.doubleValue();
+
+                                    break;
+                                }
+                            }
+                        }
+
+                        // Override unit from mapping if provided
+                        if (!lisUnit.isEmpty()) {
+                            unit = lisUnit;
+                        }
+
+                        // Apply conversion if configured and value is numeric
+                        if (value != null) {
+                            String vtrim = value.trim();
+                            if (!vtrim.isEmpty() && !"none".equalsIgnoreCase(convert)) {
+                                try {
+                                    double num = Double.parseDouble(vtrim.replace(",", "."));
+
+                                    if ("multiply".equalsIgnoreCase(convert)) {
+                                        num = num * factor;
+                                        value = String.valueOf(num);
+                                    } else if ("divide".equalsIgnoreCase(convert)) {
+                                        if (factor != 0.0) {
+                                            num = num / factor;
+                                            value = String.valueOf(num);
+                                        }
+                                    } else if ("add".equalsIgnoreCase(convert)) {
+                                        num = num + factor;
+                                        value = String.valueOf(num);
+                                    } else if ("subtract".equalsIgnoreCase(convert)) {
+                                        num = num - factor;
+                                        value = String.valueOf(num);
+                                    } else if ("log10".equalsIgnoreCase(convert)) {
+                                        if (num > 0.0) {
+                                            num = Math.log10(num);
+                                            value = String.valueOf(num);
+                                        }
+                                    }
+                                } catch (NumberFormatException nfe) {
+                                    // Keep raw value if not numeric
+                                }
+                            }
+                        }
+
                         // Build OBX
                         hl7.append("OBX|")
-                           .append(obxIndex).append("|NM|")   // OBX-1, OBX-2
-                           .append(analyte).append("|")       // OBX-3
-                           .append(seq).append("|")           // OBX-4 (Observation Sub-ID)
-                           .append(value).append("|")         // OBX-5 (Observation Value)
-                           .append(unit).append("|")          // OBX-6 (Units)
-                           .append("||")                      // OBX-7 (Reference Range) - left blank
-                           .append(flag).append("|")          // OBX-8 (Abnormal Flags)
-                           .append("F|")                      // OBX-11 (Observation Result Status) "F" = Final
-                           .append("||")                      // OBX-12/13 not used
-                           .append(tsEnd).append("|")         // OBX-14 (Date/Time of the Observation)
-                           .append(operatorId)                // OBX-16 (Responsible Observer approx)
+                           .append(obxIndex).append("|NM|");  // OBX-1, OBX-2
+
+                        // OBX-3: mapped code if present, else raw analyte
+                        if (!lisResultCode.isEmpty()) {
+                            hl7.append(lisResultCode);
+                        } else {
+                            hl7.append(analyte);
+                        }
+
+                        hl7.append("|")
+                           .append(seq).append("|")           // OBX-4
+                           .append(value).append("|")         // OBX-5
+                           .append(unit).append("|")          // OBX-6
+                           .append("||")                      // OBX-7
+                           .append(flag).append("|")          // OBX-8
+                           .append("F|")                      // OBX-11
+                           .append("||")                      // OBX-12/13
+                           .append(tsEnd).append("|")         // OBX-14
+                           .append(operatorId)                // OBX-16
                            .append("\r");
 
                         obxIndex++;
@@ -992,7 +1079,24 @@ public class AnalyzerSysmex implements Analyzer {
             return "ERROR";
         }
     }
+    
+    /**
+     * Gets the mapping configuration path.
+     * @return The mapping configuration path.
+     */
+    @Override
+    public String getMappingPath() {
+        return this.mappingPath;
+    }
 
+    /**
+     * Sets the mapping configuration path.
+     * @param mappingPath The mapping configuration path.
+     */
+    @Override
+    public void setMappingPath(String mappingPath) {
+        this.mappingPath = (mappingPath == null) ? "" : mappingPath.trim();
+    }
     
     /**
      * Starts the communication listener thread for the analyzer device.
@@ -1013,6 +1117,8 @@ public class AnalyzerSysmex implements Analyzer {
     	logger.info("DEBUG: this.type_cnx = " + this.type_cnx);
     	logger.info("DEBUG: this.mode = " + this.mode);
     	logger.info("Connecting to analyzer at " + ip_analyzer + ":" + port_analyzer);
+    	
+        this.mappingToml = Connect_util.loadMappingToml(this.getMappingPath());
 
     	if (!"socket_E1381".equalsIgnoreCase(this.type_cnx) && !"socket".equalsIgnoreCase(this.type_cnx)) {
     		logger.info("Unsupported connection type: " + type_cnx);
