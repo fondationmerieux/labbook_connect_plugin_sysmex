@@ -43,7 +43,7 @@ public class AnalyzerSysmex implements Analyzer {
 	
 	private static final Logger logger = LoggerFactory.getLogger(AnalyzerSysmex.class); // Uses Connect's logback.xml
 	
-	private final String jar_version = "0.9.4";
+	private final String jar_version = "0.9.5";
 
     // === General Configuration ===
     protected String version = "";
@@ -689,8 +689,20 @@ public class AnalyzerSysmex implements Analyzer {
                                     String cv = m.getString("convert");
                                     convert = (cv == null) ? "none" : cv.trim();
 
-                                    Double f = m.getDouble("factor");
-                                    factor = (f == null) ? 0.0 : f.doubleValue();
+                                    factor = 0.0;
+                                    try {
+                                        Object factorObj = m.toMap().get("factor");
+                                        if (factorObj instanceof Number) {
+                                            factor = ((Number) factorObj).doubleValue();
+                                        } else if (factorObj instanceof String) {
+                                            String s = ((String) factorObj).trim();
+                                            if (!s.isEmpty()) {
+                                                factor = Double.parseDouble(s.replace(",", "."));
+                                            }
+                                        }
+                                    } catch (Exception ignore) {
+                                        factor = 0.0;
+                                    }
 
                                     break;
                                 }
