@@ -1,0 +1,381 @@
+[livd_publication]
+publisher = "AEGLE (local mapping)"
+document_identifier = "sysmex_xn350"
+publication_version_id = "1.0"
+publication_date = "2026-01-19"
+
+[equipment]
+manufacturer = "Sysmex"
+model = "XN-350"
+
+# -----------------------------
+# Tests (analysis) mapping
+# -----------------------------
+[[ivd_test]]
+name = "nfs_automate"
+vendor_test_code = "NFS_XN3"
+lis_test_code = "NFS_XN3"
+
+# -----------------------------
+# Result (variable) mapping
+# -----------------------------
+
+[[ivd_mapping]]
+test = ""
+vendor_result_code = "^^^^RBC^1"
+lis_result_code = "RBC"
+vendor_unit = "10*6/uL"
+lis_unit = "million/mm3"
+convert = "none"
+factor = 0
+
+[[ivd_mapping]]
+test = ""
+vendor_result_code = "^^^^HGB^1"
+lis_result_code = "HGB"
+vendor_unit = "g/dL"
+lis_unit = "g/dl"
+convert = "none"
+factor = 0
+
+[[ivd_mapping]]
+test = ""
+vendor_result_code = "^^^^HCT^1"
+lis_result_code = "HCT"
+vendor_unit = "%"
+lis_unit = "%"
+convert = "none"
+factor = 0
+
+[[ivd_mapping]]
+test = ""
+vendor_result_code = "^^^^MCV^1"
+lis_result_code = "MCV"
+vendor_unit = "fL"
+lis_unit = "fl"
+convert = "none"
+factor = 0
+
+[[ivd_mapping]]
+test = ""
+vendor_result_code = "^^^^MCH^1"
+lis_result_code = "MCH"
+vendor_unit = "pg"
+lis_unit = "pg"
+convert = "none"
+factor = 0
+
+[[ivd_mapping]]
+test = ""
+vendor_result_code = "^^^^MCHC^1"
+lis_result_code = "MCHC"
+vendor_unit = "g/dL"
+lis_unit = "g/dl"
+convert = "none"
+factor = 0
+
+[[ivd_mapping]]
+test = ""
+vendor_result_code = "^^^^WBC^1"
+lis_result_code = "WBC"
+vendor_unit = "10*3/uL"
+lis_unit = "10³/µL"
+convert = "none"
+factor = 0
+
+[[ivd_mapping]]
+test = ""
+vendor_result_code = "^^^^PLT^1"
+lis_result_code = "PLT"
+vendor_unit = "10*3/uL"
+lis_unit = "10³/µL"
+convert = "none"
+factor = 0
+
+[[ivd_mapping]]
+test = ""
+vendor_result_code = "^^^^NEUT#^1"
+lis_result_code = "NEUT#"
+vendor_unit = "10*3/uL"
+lis_unit = "10³/µL"
+convert = "none"
+factor = 0
+
+[[ivd_mapping]]
+test = ""
+vendor_result_code = "^^^^NEUT%^1"
+lis_result_code = "NEUT%"
+vendor_unit = "%"
+lis_unit = "%"
+convert = "none"
+factor = 0
+
+[[ivd_mapping]]
+test = ""
+vendor_result_code = "^^^^LYMPH#^1"
+lis_result_code = "LYMPH#"
+vendor_unit = "10*3/uL"
+lis_unit = "10³/µL"
+convert = "none"
+factor = 0
+
+[[ivd_mapping]]
+test = ""
+vendor_result_code = "^^^^LYMPH%^1"
+lis_result_code = "LYMPH%"
+vendor_unit = "%"
+lis_unit = "%"
+convert = "none"
+factor = 0
+
+[[ivd_mapping]]
+test = ""
+vendor_result_code = "^^^^MONO#^1"
+lis_result_code = "MONO#"
+vendor_unit = "10*3/uL"
+lis_unit = "10³/µL"
+convert = "none"
+factor = 0
+
+[[ivd_mapping]]
+test = ""
+vendor_result_code = "^^^^MONO%^1"
+lis_result_code = "MONO%"
+vendor_unit = "%"
+lis_unit = "%"
+convert = "none"
+factor = 0
+
+[[ivd_mapping]]
+test = ""
+vendor_result_code = "^^^^EO#^1"
+lis_result_code = "EO#"
+vendor_unit = "10*3/uL"
+lis_unit = "10³/µL"
+convert = "none"
+factor = 0
+
+[[ivd_mapping]]
+test = ""
+vendor_result_code = "^^^^EO%^1"
+lis_result_code = "EO%"
+vendor_unit = "%"
+lis_unit = "%"
+convert = "none"
+factor = 0
+
+[[ivd_mapping]]
+test = ""
+vendor_result_code = "^^^^BASO#^1"
+lis_result_code = "BASO#"
+vendor_unit = "10*3/uL"
+lis_unit = "10³/µL"
+convert = "none"
+factor = 0
+
+[[ivd_mapping]]
+test = ""
+vendor_result_code = "^^^^BASO%^1"
+lis_result_code = "BASO%"
+vendor_unit = "%"
+lis_unit = "%"
+convert = "none"
+factor = 0
+
+[[ivd_mapping]]
+test = ""
+vendor_result_code = "^^^^IG#^1"
+lis_result_code = "IG#"
+vendor_unit = "10*3/uL"
+lis_unit = "10³/µL"
+convert = "none"
+factor = 0
+
+[[ivd_mapping]]
+test = ""
+vendor_result_code = "^^^^IG%^1"
+lis_result_code = "IG%"
+vendor_unit = "%"
+lis_unit = "%"
+convert = "none"
+factor = 0
+
+[[ivd_mapping]]
+test = ""
+vendor_result_code = "^^^^RDW-CV^1"
+lis_result_code = "RDW-CV"
+vendor_unit = "%"
+lis_unit = "%"
+convert = "none"
+factor = 0
+
+[[ivd_mapping]]
+test = ""
+vendor_result_code = "^^^^RDW-SD^1"
+lis_result_code = "RDW-SD"
+vendor_unit = "fL"
+lis_unit = "fl"
+convert = "none"
+factor = 0
+
+[[ivd_mapping]]
+test = ""
+vendor_result_code = "^^^^MICROR^1"
+lis_result_code = "MICROR"
+vendor_unit = "%"
+lis_unit = "%"
+convert = "none"
+factor = 0
+
+[[ivd_mapping]]
+test = ""
+vendor_result_code = "^^^^MACROR^1"
+lis_result_code = "MACROR"
+vendor_unit = "%"
+lis_unit = "%"
+convert = "none"
+factor = 0
+
+[[ivd_mapping]]
+test = ""
+vendor_result_code = "^^^^MPV^1"
+lis_result_code = "MPV"
+vendor_unit = "fL"
+lis_unit = "fl"
+convert = "none"
+factor = 0
+
+[[ivd_mapping]]
+test = ""
+vendor_result_code = "^^^^PDW^1"
+lis_result_code = "PDW"
+vendor_unit = "fL"
+lis_unit = "fl"
+convert = "none"
+factor = 0
+
+[[ivd_mapping]]
+test = ""
+vendor_result_code = "^^^^P-LCR^1"
+lis_result_code = "P-LCR"
+vendor_unit = "%"
+lis_unit = "%"
+convert = "none"
+factor = 0
+
+[[ivd_mapping]]
+test = ""
+vendor_result_code = "^^^^PCT^1"
+lis_result_code = "PCT"
+vendor_unit = "%"
+lis_unit = "%"
+convert = "none"
+factor = 0
+
+[[ivd_mapping]]
+test = ""
+vendor_result_code = "^^^^RET#^1"
+lis_result_code = "RET#"
+vendor_unit = "10*6/uL"
+lis_unit = "10⁶/µL"
+convert = "none"
+factor = 0
+
+[[ivd_mapping]]
+test = ""
+vendor_result_code = "^^^^RET%^1"
+lis_result_code = "RET%"
+vendor_unit = "%"
+lis_unit = "%"
+convert = "none"
+factor = 0
+
+[[ivd_mapping]]
+test = ""
+vendor_result_code = "^^^^IRF^1"
+lis_result_code = "IRF"
+vendor_unit = "%"
+lis_unit = "%"
+convert = "none"
+factor = 0
+
+[[ivd_mapping]]
+test = ""
+vendor_result_code = "^^^^RET-HE^1"
+lis_result_code = "RET-HE"
+vendor_unit = "pg"
+lis_unit = "pg"
+convert = "none"
+factor = 0
+
+[[ivd_mapping]]
+test = ""
+vendor_result_code = "^^^^RBC-HE^1"
+lis_result_code = "RBC-HE"
+vendor_unit = "pg"
+lis_unit = "pg"
+convert = "none"
+factor = 0
+
+[[ivd_mapping]]
+test = ""
+vendor_result_code = "^^^^DELTA-HE^1"
+lis_result_code = "DELTA-HE"
+vendor_unit = "pg"
+lis_unit = "pg"
+convert = "none"
+factor = 0
+
+[[ivd_mapping]]
+test = ""
+vendor_result_code = "^^^^HYPO-HE^1"
+lis_result_code = "HYPO-HE"
+vendor_unit = "%"
+lis_unit = "%"
+convert = "none"
+factor = 0
+
+[[ivd_mapping]]
+test = ""
+vendor_result_code = "^^^^HYPER-HE^1"
+lis_result_code = "HYPER-HE"
+vendor_unit = "%"
+lis_unit = "%"
+convert = "none"
+factor = 0
+
+[[ivd_mapping]]
+test = ""
+vendor_result_code = "^^^^Neutrophilia"
+lis_result_code = "Neutrophil"
+vendor_unit = ""
+lis_unit = ""
+convert = "none"
+factor = 0
+
+[[ivd_mapping]]
+test = ""
+vendor_result_code = "^^^^Lymphopenia"
+lis_result_code = "Lymphopeni"
+vendor_unit = ""
+lis_unit = ""
+convert = "none"
+factor = 0
+
+[[ivd_mapping]]
+test = ""
+vendor_result_code = "^^^^PLT_Clumps?"
+lis_result_code = "PLT_Clumps"
+vendor_unit = ""
+lis_unit = ""
+convert = "none"
+factor = 0
+
+[[ivd_mapping]]
+test = ""
+vendor_result_code = "^^^^Blasts/Abn_Lympho?"
+lis_result_code = "Blasts/Abn"
+vendor_unit = ""
+lis_unit = ""
+convert = "none"
+factor = 0

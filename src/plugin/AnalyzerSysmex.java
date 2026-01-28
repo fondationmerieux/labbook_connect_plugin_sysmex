@@ -43,7 +43,7 @@ public class AnalyzerSysmex implements Analyzer {
 	
 	private static final Logger logger = LoggerFactory.getLogger(AnalyzerSysmex.class); // Uses Connect's logback.xml
 	
-	private final String jar_version = "0.9.5";
+	private final String jar_version = "0.9.6";
 
     // === General Configuration ===
     protected String version = "";
@@ -606,10 +606,13 @@ public class AnalyzerSysmex implements Analyzer {
                                 specimenId = sidParts[0]; // first piece should be Sample ID
                             }
                         }
+                        
+                        if (specimenId != null) specimenId = specimenId.trim();
 
                         // fallback: fields[2]
                         if ((specimenId == null || specimenId.isEmpty()) && fields.length > 2) {
                             specimenId = fields[2];
+                            if (specimenId != null) specimenId = specimenId.trim();
                         }
 
                         // Build SPM segment (SPM-2 = specimen ID)
