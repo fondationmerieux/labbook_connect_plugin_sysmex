@@ -22,7 +22,7 @@ lis_test_code = "NFS_XN3"
 
 [[ivd_mapping]]
 test = ""
-vendor_result_code = "^^^^RBC^1"
+vendor_result_code = "^^^^RBC"
 lis_result_code = "RBC"
 vendor_unit = "10*6/uL"
 lis_unit = "million/mm3"
@@ -31,7 +31,7 @@ factor = 0
 
 [[ivd_mapping]]
 test = ""
-vendor_result_code = "^^^^HGB^1"
+vendor_result_code = "^^^^HGB"
 lis_result_code = "HGB"
 vendor_unit = "g/dL"
 lis_unit = "g/dl"
@@ -40,7 +40,7 @@ factor = 0
 
 [[ivd_mapping]]
 test = ""
-vendor_result_code = "^^^^HCT^1"
+vendor_result_code = "^^^^HCT"
 lis_result_code = "HCT"
 vendor_unit = "%"
 lis_unit = "%"
@@ -49,7 +49,7 @@ factor = 0
 
 [[ivd_mapping]]
 test = ""
-vendor_result_code = "^^^^MCV^1"
+vendor_result_code = "^^^^MCV"
 lis_result_code = "MCV"
 vendor_unit = "fL"
 lis_unit = "fl"
@@ -58,7 +58,7 @@ factor = 0
 
 [[ivd_mapping]]
 test = ""
-vendor_result_code = "^^^^MCH^1"
+vendor_result_code = "^^^^MCH"
 lis_result_code = "MCH"
 vendor_unit = "pg"
 lis_unit = "pg"
@@ -67,7 +67,7 @@ factor = 0
 
 [[ivd_mapping]]
 test = ""
-vendor_result_code = "^^^^MCHC^1"
+vendor_result_code = "^^^^MCHC"
 lis_result_code = "MCHC"
 vendor_unit = "g/dL"
 lis_unit = "g/dl"
@@ -76,7 +76,7 @@ factor = 0
 
 [[ivd_mapping]]
 test = ""
-vendor_result_code = "^^^^WBC^1"
+vendor_result_code = "^^^^WBC"
 lis_result_code = "WBC"
 vendor_unit = "10*3/uL"
 lis_unit = "10³/µL"
@@ -85,7 +85,7 @@ factor = 0
 
 [[ivd_mapping]]
 test = ""
-vendor_result_code = "^^^^PLT^1"
+vendor_result_code = "^^^^PLT"
 lis_result_code = "PLT"
 vendor_unit = "10*3/uL"
 lis_unit = "10³/µL"
@@ -94,7 +94,7 @@ factor = 0
 
 [[ivd_mapping]]
 test = ""
-vendor_result_code = "^^^^NEUT#^1"
+vendor_result_code = "^^^^NEUT#"
 lis_result_code = "NEUT#"
 vendor_unit = "10*3/uL"
 lis_unit = "10³/µL"
@@ -103,7 +103,7 @@ factor = 0
 
 [[ivd_mapping]]
 test = ""
-vendor_result_code = "^^^^NEUT%^1"
+vendor_result_code = "^^^^NEUT%"
 lis_result_code = "NEUT%"
 vendor_unit = "%"
 lis_unit = "%"
@@ -112,7 +112,7 @@ factor = 0
 
 [[ivd_mapping]]
 test = ""
-vendor_result_code = "^^^^LYMPH#^1"
+vendor_result_code = "^^^^LYMPH#"
 lis_result_code = "LYMPH#"
 vendor_unit = "10*3/uL"
 lis_unit = "10³/µL"
@@ -121,7 +121,7 @@ factor = 0
 
 [[ivd_mapping]]
 test = ""
-vendor_result_code = "^^^^LYMPH%^1"
+vendor_result_code = "^^^^LYMPH%"
 lis_result_code = "LYMPH%"
 vendor_unit = "%"
 lis_unit = "%"
@@ -130,7 +130,7 @@ factor = 0
 
 [[ivd_mapping]]
 test = ""
-vendor_result_code = "^^^^MONO#^1"
+vendor_result_code = "^^^^MONO#"
 lis_result_code = "MONO#"
 vendor_unit = "10*3/uL"
 lis_unit = "10³/µL"
@@ -139,7 +139,7 @@ factor = 0
 
 [[ivd_mapping]]
 test = ""
-vendor_result_code = "^^^^MONO%^1"
+vendor_result_code = "^^^^MONO%"
 lis_result_code = "MONO%"
 vendor_unit = "%"
 lis_unit = "%"
@@ -148,7 +148,7 @@ factor = 0
 
 [[ivd_mapping]]
 test = ""
-vendor_result_code = "^^^^EO#^1"
+vendor_result_code = "^^^^EO#"
 lis_result_code = "EO#"
 vendor_unit = "10*3/uL"
 lis_unit = "10³/µL"
@@ -157,7 +157,7 @@ factor = 0
 
 [[ivd_mapping]]
 test = ""
-vendor_result_code = "^^^^EO%^1"
+vendor_result_code = "^^^^EO%"
 lis_result_code = "EO%"
 vendor_unit = "%"
 lis_unit = "%"
@@ -166,7 +166,7 @@ factor = 0
 
 [[ivd_mapping]]
 test = ""
-vendor_result_code = "^^^^BASO#^1"
+vendor_result_code = "^^^^BASO#"
 lis_result_code = "BASO#"
 vendor_unit = "10*3/uL"
 lis_unit = "10³/µL"
@@ -175,7 +175,7 @@ factor = 0
 
 [[ivd_mapping]]
 test = ""
-vendor_result_code = "^^^^BASO%^1"
+vendor_result_code = "^^^^BASO%"
 lis_result_code = "BASO%"
 vendor_unit = "%"
 lis_unit = "%"
@@ -184,7 +184,7 @@ factor = 0
 
 [[ivd_mapping]]
 test = ""
-vendor_result_code = "^^^^IG#^1"
+vendor_result_code = "^^^^IG#"
 lis_result_code = "IG#"
 vendor_unit = "10*3/uL"
 lis_unit = "10³/µL"
@@ -193,7 +193,7 @@ factor = 0
 
 [[ivd_mapping]]
 test = ""
-vendor_result_code = "^^^^IG%^1"
+vendor_result_code = "^^^^IG%"
 lis_result_code = "IG%"
 vendor_unit = "%"
 lis_unit = "%"
@@ -202,7 +202,7 @@ factor = 0
 
 [[ivd_mapping]]
 test = ""
-vendor_result_code = "^^^^RDW-CV^1"
+vendor_result_code = "^^^^RDW-CV"
 lis_result_code = "RDW-CV"
 vendor_unit = "%"
 lis_unit = "%"
@@ -211,7 +211,7 @@ factor = 0
 
 [[ivd_mapping]]
 test = ""
-vendor_result_code = "^^^^RDW-SD^1"
+vendor_result_code = "^^^^RDW-SD"
 lis_result_code = "RDW-SD"
 vendor_unit = "fL"
 lis_unit = "fl"
@@ -220,7 +220,7 @@ factor = 0
 
 [[ivd_mapping]]
 test = ""
-vendor_result_code = "^^^^MICROR^1"
+vendor_result_code = "^^^^MICROR"
 lis_result_code = "MICROR"
 vendor_unit = "%"
 lis_unit = "%"
@@ -229,7 +229,7 @@ factor = 0
 
 [[ivd_mapping]]
 test = ""
-vendor_result_code = "^^^^MACROR^1"
+vendor_result_code = "^^^^MACROR"
 lis_result_code = "MACROR"
 vendor_unit = "%"
 lis_unit = "%"
@@ -238,7 +238,7 @@ factor = 0
 
 [[ivd_mapping]]
 test = ""
-vendor_result_code = "^^^^MPV^1"
+vendor_result_code = "^^^^MPV"
 lis_result_code = "MPV"
 vendor_unit = "fL"
 lis_unit = "fl"
@@ -247,7 +247,7 @@ factor = 0
 
 [[ivd_mapping]]
 test = ""
-vendor_result_code = "^^^^PDW^1"
+vendor_result_code = "^^^^PDW"
 lis_result_code = "PDW"
 vendor_unit = "fL"
 lis_unit = "fl"
@@ -256,7 +256,7 @@ factor = 0
 
 [[ivd_mapping]]
 test = ""
-vendor_result_code = "^^^^P-LCR^1"
+vendor_result_code = "^^^^P-LCR"
 lis_result_code = "P-LCR"
 vendor_unit = "%"
 lis_unit = "%"
@@ -265,7 +265,7 @@ factor = 0
 
 [[ivd_mapping]]
 test = ""
-vendor_result_code = "^^^^PCT^1"
+vendor_result_code = "^^^^PCT"
 lis_result_code = "PCT"
 vendor_unit = "%"
 lis_unit = "%"
@@ -274,7 +274,7 @@ factor = 0
 
 [[ivd_mapping]]
 test = ""
-vendor_result_code = "^^^^RET#^1"
+vendor_result_code = "^^^^RET#"
 lis_result_code = "RET#"
 vendor_unit = "10*6/uL"
 lis_unit = "10⁶/µL"
@@ -283,7 +283,7 @@ factor = 0
 
 [[ivd_mapping]]
 test = ""
-vendor_result_code = "^^^^RET%^1"
+vendor_result_code = "^^^^RET%"
 lis_result_code = "RET%"
 vendor_unit = "%"
 lis_unit = "%"
@@ -292,7 +292,7 @@ factor = 0
 
 [[ivd_mapping]]
 test = ""
-vendor_result_code = "^^^^IRF^1"
+vendor_result_code = "^^^^IRF"
 lis_result_code = "IRF"
 vendor_unit = "%"
 lis_unit = "%"
@@ -301,7 +301,7 @@ factor = 0
 
 [[ivd_mapping]]
 test = ""
-vendor_result_code = "^^^^RET-HE^1"
+vendor_result_code = "^^^^RET-HE"
 lis_result_code = "RET-HE"
 vendor_unit = "pg"
 lis_unit = "pg"
@@ -310,7 +310,7 @@ factor = 0
 
 [[ivd_mapping]]
 test = ""
-vendor_result_code = "^^^^RBC-HE^1"
+vendor_result_code = "^^^^RBC-HE"
 lis_result_code = "RBC-HE"
 vendor_unit = "pg"
 lis_unit = "pg"
@@ -319,7 +319,7 @@ factor = 0
 
 [[ivd_mapping]]
 test = ""
-vendor_result_code = "^^^^DELTA-HE^1"
+vendor_result_code = "^^^^DELTA-HE"
 lis_result_code = "DELTA-HE"
 vendor_unit = "pg"
 lis_unit = "pg"
@@ -328,7 +328,7 @@ factor = 0
 
 [[ivd_mapping]]
 test = ""
-vendor_result_code = "^^^^HYPO-HE^1"
+vendor_result_code = "^^^^HYPO-HE"
 lis_result_code = "HYPO-HE"
 vendor_unit = "%"
 lis_unit = "%"
@@ -337,7 +337,7 @@ factor = 0
 
 [[ivd_mapping]]
 test = ""
-vendor_result_code = "^^^^HYPER-HE^1"
+vendor_result_code = "^^^^HYPER-HE"
 lis_result_code = "HYPER-HE"
 vendor_unit = "%"
 lis_unit = "%"

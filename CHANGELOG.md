@@ -3,6 +3,10 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.9.7] - 2026-01-29
+### Fixed
+- Make Sysmex result mapping dilution-independent by stripping trailing "^<digits>" suffixes from analyte codes.
+
 ## [0.9.6] - 2026-01-28
 ### Fixed
 - Trim specimen ID before HL7 build to remove left-padded spaces and ensure correct sample matching

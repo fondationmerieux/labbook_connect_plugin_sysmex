@@ -43,7 +43,7 @@ public class AnalyzerSysmex implements Analyzer {
 	
 	private static final Logger logger = LoggerFactory.getLogger(AnalyzerSysmex.class); // Uses Connect's logback.xml
 	
-	private final String jar_version = "0.9.6";
+	private final String jar_version = "0.9.7";
 
     // === General Configuration ===
     protected String version = "";
@@ -665,7 +665,7 @@ public class AnalyzerSysmex implements Analyzer {
                         String tsEnd      = (fields.length > 12) ? fields[12] : "";
 
                         // Mapping: vendor_result_code = raw analyte field (ASTM R|2)
-                        String vendorResultCode = (analyte == null) ? "" : analyte.trim();
+                        String vendorResultCode = normalizeVendorResultCode(analyte);
 
                         String lisResultCode = "";
                         String lisUnit = "";
@@ -682,7 +682,9 @@ public class AnalyzerSysmex implements Analyzer {
                                 String t = m.getString("test");
                                 boolean testOk = (t == null || t.trim().isEmpty());
 
-                                if (testOk && vrc.trim().equals(vendorResultCode)) {
+                                String vrcNorm = normalizeVendorResultCode(vrc);
+                                
+                                if (testOk && vrcNorm.equalsIgnoreCase(vendorResultCode)) {
                                     String lrc = m.getString("lis_result_code");
                                     lisResultCode = (lrc == null) ? "" : lrc.trim();
 
@@ -1655,4 +1657,28 @@ public class AnalyzerSysmex implements Analyzer {
         }
         return lines;
     }
+    
+    /**
+     * Normalizes a Sysmex ASTM analyte identifier for mapping.
+     *
+     * Sysmex may append a dilution/mode suffix as one or more "^<digits>" blocks
+     * (e.g. "^^^^WBC^7", "^^^^WBC^26", or even "^^^^WBC^7^1").
+     * This method strips all trailing "^<digits>" blocks so mappings remain stable
+     * regardless of dilution/operation mode.
+     *
+     * Examples:
+     *  - "^^^^WBC^7"   -> "^^^^WBC"
+     *  - "^^^^WBC^26"  -> "^^^^WBC"
+     *  - "^^^^WBC^7^1" -> "^^^^WBC"
+     *
+     * @param code Raw vendor analyte code from ASTM R-2 (may be null/blank)
+     * @return Normalized analyte code without trailing numeric suffixes
+     */
+    private static String normalizeVendorResultCode(String code) {
+        String s = (code == null) ? "" : code.trim();
+        if (s.isEmpty()) return "";
+        // Drop one or more trailing ^<digits> blocks
+        return s.replaceFirst("(\\^\\d+)+$", "");
+    }
+
 }
