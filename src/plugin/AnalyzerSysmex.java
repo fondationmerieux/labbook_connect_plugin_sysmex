@@ -43,7 +43,7 @@ public class AnalyzerSysmex implements Analyzer {
 	
 	private static final Logger logger = LoggerFactory.getLogger(AnalyzerSysmex.class); // Uses Connect's logback.xml
 	
-	private final String jar_version = "0.9.7";
+	private final String jar_version = "0.9.8";
 
     // === General Configuration ===
     protected String version = "";
@@ -671,6 +671,7 @@ public class AnalyzerSysmex implements Analyzer {
                         String lisUnit = "";
                         String convert = "none";
                         double factor = 0.0;
+                        String vendorUnit = "";
 
                         List<Toml> maps = mappingToml.getTables("ivd_mapping");
                         if (maps != null && !vendorResultCode.isEmpty()) {
@@ -693,6 +694,9 @@ public class AnalyzerSysmex implements Analyzer {
 
                                     String cv = m.getString("convert");
                                     convert = (cv == null) ? "none" : cv.trim();
+                                    
+                                    String vu = m.getString("vendor_unit");
+                                    vendorUnit = (vu == null) ? "" : vu.trim();
 
                                     factor = 0.0;
                                     try {
@@ -718,7 +722,9 @@ public class AnalyzerSysmex implements Analyzer {
                         if (!lisUnit.isEmpty()) {
                             unit = lisUnit;
                         }
-
+                        
+                        value = stripTrailingUnitFromValue(value, unit, lisUnit, vendorUnit);
+                        
                         // Apply conversion if configured and value is numeric
                         if (value != null) {
                             String vtrim = value.trim();
@@ -751,7 +757,7 @@ public class AnalyzerSysmex implements Analyzer {
                                 }
                             }
                         }
-
+                        
                         // Build OBX
                         hl7.append("OBX|")
                            .append(obxIndex).append("|NM|");  // OBX-1, OBX-2
@@ -1007,7 +1013,7 @@ public class AnalyzerSysmex implements Analyzer {
                 // Build frame body: <frameNo><recordLine>
                 // Frame number cycles 1..7,0 then repeats.
                 // Example: STX '1' H|... ETX CS CS CR LF
-                String body = ((i + 1) % 8) + lines[i];
+            	String body = ((i + 1) % 8) + lines[i] + "\r";
                 byte[] bodyBytes = body.getBytes(StandardCharsets.US_ASCII);
 
                 // Build frame: STX + body + ETX + checksum + CR + LF
@@ -1680,5 +1686,41 @@ public class AnalyzerSysmex implements Analyzer {
         // Drop one or more trailing ^<digits> blocks
         return s.replaceFirst("(\\^\\d+)+$", "");
     }
+    
+    /**
+     * Strips a trailing unit from a value when the unit is already provided separately.
+     *
+     * Purpose:
+     * - Prevent duplicated unit display in the LIS UI (value + unit column).
+     * - ASTM sends VALUE and UNIT in separate fields, but some analyzers embed the unit in VALUE.
+     *
+     * Rule:
+     * - If value ends with " " + unit (exact match), the unit suffix is removed.
+     * - Otherwise, the value is returned unchanged.
+     *
+     * Examples:
+     * - "6.17 million/mm3" + "million/mm3" -> "6.17"
+     * - "5.33 10³/µL"      + "10³/µL"      -> "5.33"
+     *
+     * This method is intentionally conservative.
+     */
+    private static String stripTrailingUnitFromValue(String value, String... possibleUnits) {
+        if (value == null) return "";
+        String v = value.trim();
+        if (v.isEmpty()) return v;
+
+        for (String u : possibleUnits) {
+            if (u == null) continue;
+            String unit = u.trim();
+            if (unit.isEmpty()) continue;
+
+            String suffix = " " + unit;
+            if (v.length() > suffix.length() && v.endsWith(suffix)) {
+                return v.substring(0, v.length() - suffix.length()).trim();
+            }
+        }
+        return v;
+    }
+
 
 }
