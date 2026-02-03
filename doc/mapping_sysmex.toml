@@ -4,9 +4,27 @@ document_identifier = "sysmex_xn350"
 publication_version_id = "1.0"
 publication_date = "2026-01-19"
 
+# Only the tests explicitly listed below are supported.
+# Additional tests and result mappings must be added as needed.
+
 [equipment]
 manufacturer = "Sysmex"
 model = "XN-350"
+
+# ---------------------------------------
+# Result value conversion rules
+# ---------------------------------------
+# convert can be one of:
+#   - none
+#   - multiply   (value = value * factor)
+#   - divide     (value = value / factor)
+#   - add        (value = value + factor)
+#   - subtract   (value = value - factor)
+#   - log10      (value = log10(value), value > 0 required)
+#
+# factor:
+#   - numeric (number or string)
+#   - ignored when convert = "none"
 
 # -----------------------------
 # Tests (analysis) mapping

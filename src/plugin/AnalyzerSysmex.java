@@ -34,16 +34,29 @@ import ca.uhn.hl7v2.model.v251.segment.SPM;
 import ca.uhn.hl7v2.model.v251.message.ACK;
 
 /**
- * Implementation of the Analyzer interface specific for Sysmex analyzers.
- * <p>
- * This class provides the functionalities needed to communicate with Sysmex analyzers 
- * using ASTM protocol, handling LAB-27, LAB-28, and LAB-29 transactions.
+ * Sysmex analyzer connector for LabBook Connect.
+ *
+ * This implementation supports ASTM record exchanges and (optionally) ASTM E1381-style framing
+ * over TCP sockets (ENQ/ACK/NAK, STX...ETX/ETB, checksum, CR/LF, EOT).
+ *
+ * Transactions handled by this plugin:
+ * - LAB-27: analyzer query (ASTM Q record) -> HL7 QBP^Q11 -> HL7 RSP^K11 -> ASTM response.
+ * - LAB-29: analyzer results (ASTM H/P/O/R/L) -> HL7 OUL^R22 -> HL7 ACK -> ASTM L|1|Y/N.
+ *
+ * LAB-28 (HL7 order -> ASTM order) is implemented as best-effort and must be validated
+ * against the analyzer configuration (Sysmex models differ on host->analyzer order support).
+ *
+ * Notes:
+ * - Some Sysmex analyzers prepend record numbers (0..7) before the record type (e.g. "1H|...").
+ *   This plugin strips those prefixes when parsing.
+ * - "ASTM E1381" framing details are used as a reference implementation for the link layer;
+ *   actual analyzer behavior may vary slightly by model/firmware.
  */
 public class AnalyzerSysmex implements Analyzer {
 	
 	private static final Logger logger = LoggerFactory.getLogger(AnalyzerSysmex.class); // Uses Connect's logback.xml
 	
-	private final String jar_version = "0.9.8";
+	private final String jar_version = "1.0.0";
 
     // === General Configuration ===
     protected String version = "";
@@ -250,7 +263,8 @@ public class AnalyzerSysmex implements Analyzer {
      * Parses the incoming HL7 OML^O33 message, extracts patient/specimen/order info,
      * converts the message into ASTM format, and sends it to the analyzer over socket.
      * 
-     * Returns an HL7 ACK^R22 to confirm whether the analyzer accepted the message (ACK) or not (NAK).
+     * Returns an HL7 ACK^R22 to LabBook (LIS-side acknowledgment).
+     * The analyzer acceptance is inferred from the ASTM-level ACK/NAK exchange.
      *
      * @param str_OML_O33 HL7 message string in ER7 format (OML^O33)
      * @return HL7 ACK^R22 message to be returned to LabBook
@@ -399,8 +413,11 @@ public class AnalyzerSysmex implements Analyzer {
      *  - Patient demographics (name, DOB, etc.) are ignored by XP series,
      *    so we do not try to send them.
      *  - O|... must follow XP format:
-     *      O|1||^^<15-char SampleID>^A|^^^^WBC\^^^^RBC\...|...|||N...||F
+     *    O|1||^^{15-char SampleID}^A|^^^^WBC\\^^^^RBC\\...|...|||N...||F
      *    See XP ASTM spec 9.4.x.
+     *    
+     * @param oml HL7 message string (ER7) OML^O33
+     * @return ASTM lines to send to the analyzer
      */
     public String[] convertOML_O33ToASTM(String oml) {
         List<String> lines = new ArrayList<>();
@@ -521,24 +538,36 @@ public class AnalyzerSysmex implements Analyzer {
     }
     
     /**
-     * Convert ASTM result lines (Sysmex XP ASTM E1394-97 format)
-     * into an HL7 OUL^R22 message (manual build, no HAPI groups).
+     * Converts an ASTM result message into an HL7 v2.5.1 OUL^R22 message (manual build).
      *
-     * Mapping rules (Sysmex R| segments):
-     * R|seq|^^^^CODE^dilution|VALUE|UNIT||FLAG|||OPERATOR||YYYYMMDDhhmmss
+     * Parsing behavior:
+     * - Accepts ASTM records separated by CR/LF and optionally prefixed with a single digit (0..7)
+     *   before the record type (e.g. "1H|...", "2R|..."). Those prefixes are stripped.
+     * - Uses the following record types when present:
+     *   - P: patient identifier (optional, often empty on Sysmex)
+     *   - O: specimen/order identifier (used to populate SPM/ORC/OBR)
+     *   - R: result records (mapped to OBX)
+     *   - C: comment records (mapped to NTE)
      *
-     * We map to HL7 OBX like this:
-     *   OBX-1  = incremental index
-     *   OBX-2  = "NM" (numeric) by default
-     *   OBX-3  = analyte code (ASTM field[2], e.g. "^^^^WBC^26")
-     *   OBX-4  = seq (ASTM field[1])
-     *   OBX-5  = value (ASTM field[3])
-     *   OBX-6  = unit (ASTM field[4])
-     *   OBX-7  = reference range (leave blank)
-     *   OBX-8  = abnormal flag (ASTM field[6], e.g. H/L/N/A)
-     *   OBX-11 = "F" (Final)
-     *   OBX-14 = observation timestamp (ASTM field[12])
-     *   OBX-16 = responsible observer / operator (ASTM field[10])
+     * Result mapping (R record -> OBX):
+     * - OBX-1: incremental index starting at 1
+     * - OBX-2: "NM" (numeric) by default
+     * - OBX-3: mapped LIS result code if available, otherwise the raw ASTM analyte identifier (R-2)
+     * - OBX-4: R-1 (sequence)
+     * - OBX-5: R-3 (value), with "no value" placeholders converted to empty
+     * - OBX-6: R-4 (unit), overridden by mapping when lis_unit is provided
+     * - OBX-8: R-6 (abnormal flag)
+     * - OBX-11: "F" (final)
+     * - OBX-14: R-12 (timestamp) when present
+     * - OBX-16: R-10 (operator/technician) when present
+     *
+     * Mapping support (TOML):
+     * - Matches on vendor_result_code against a normalized form of R-2 (trailing "^&lt;digits&gt;" suffixes removed).
+     * - When a match is found, lis_result_code and lis_unit are used (if non-empty).
+     * - Optional numeric conversion can be applied to the value using convert/factor (multiply/divide/add/subtract/log10).
+     *
+     * @param lines ASTM message lines (already split)
+     * @return HL7 OUL^R22 in ER7 format, or null on error
      */
     public String convertASTMtoOUL_R22(String[] lines) {
         try {
@@ -572,9 +601,9 @@ public class AnalyzerSysmex implements Analyzer {
 
                 switch (fields[0]) {
                     case "P":
-                        // ASTM P record: P|1|<patientID>|...
-                        // Sysmex XP often only sends P|1 with almost nothing.
-                        // We'll still populate PID with PID-3 = patientId if present.
+                    	// ASTM P record: P|<seq>|<patientId>|...
+                        // Some Sysmex configurations send only "P|1" with no identifiers.
+                        // When present, we map patientId (P-2) to PID-3.
                         patientId = (fields.length > 2) ? fields[2] : null;
                         hl7.append("PID|||")
                            .append(patientId != null ? patientId : "")
@@ -583,14 +612,18 @@ public class AnalyzerSysmex implements Analyzer {
                         break;
 
                     case "O":
-                        /*
-                         * ASTM O record:
-                         * O|1||^^<SampleID>^A|^^^^WBC\^^^^RBC\...|...|||||||N...||F
+                    	/*
+                         * ASTM O record: used to derive a specimen/order identifier for HL7.
                          *
-                         * We use it to build:
-                         *   SPM (specimen ID)
-                         *   ORC (placer order number)
-                         *   OBR (test request info)
+                         * Extraction strategy:
+                         * - Prefer O field[3] when it starts with "^^" (e.g. "^^<SampleId>^..."), take the first component after the "^^".
+                         * - Fallback to O field[2] if field[3] does not provide an identifier.
+                         *
+                         * HL7 segments produced:
+                         * - SPM-2 = specimenId
+                         * - ORC-2 = specimenId
+                         * - OBR-2 = specimenId
+                         * - OBR-4 = raw requested parameter list from O field[4] when present
                          */
 
                         // specimenId is usually fields[2] OR embedded in fields[3] ("^^<SampleID>^A")
@@ -639,21 +672,23 @@ public class AnalyzerSysmex implements Analyzer {
                         break;
 
                     case "R":
-                        /*
-                         * ASTM R record layout (Sysmex XP):
-                         *  0:"R"
-                         *  1: sequence (e.g. "1")
-                         *  2: analyte identifier like "^^^^WBC^26"
-                         *  3: value
-                         *  4: unit
-                         *  5: -- (ref range often blank or instrument-specific)
-                         *  6: flag (H/L/N/A/...)
-                         *  7: -- not always used
-                         *  8: -- not always used
-                         *  9: -- not always used
-                         * 10: operator ID / tech ID
-                         * 11: -- not always used
-                         * 12: timestamp test end "YYYYMMDDhhmmss"
+                    	/*
+                         * ASTM R record -> HL7 OBX.
+                         *
+                         * The parser consumes only these fields (0-based indexing on `fields[]` after split by '|'):
+                         * - fields[1]  : sequence (mapped to OBX-4)
+                         * - fields[2]  : analyte identifier (used for mapping and as fallback OBX-3)
+                         * - fields[3]  : value (mapped to OBX-5; "no value" tokens become empty)
+                         * - fields[4]  : unit (mapped to OBX-6; can be overridden by mapping lis_unit)
+                         * - fields[6]  : abnormal flag (mapped to OBX-8)
+                         * - fields[10] : operator/technician (mapped to OBX-16 when present)
+                         * - fields[12] : timestamp (mapped to OBX-14 when present)
+                         *
+                         * Mapping rules:
+                         * - vendor_result_code is matched against a normalized form of fields[2]
+                         *   (trailing "^<digits>" suffixes removed).
+                         * - If a match is found, lis_result_code replaces OBX-3 and lis_unit can replace OBX-6.
+                         * - Optional numeric conversion is applied on OBX-5 according to convert/factor.
                          */
 
                         String seq        = (fields.length > 1)  ? fields[1]  : "";
@@ -663,6 +698,12 @@ public class AnalyzerSysmex implements Analyzer {
                         String flag       = (fields.length > 6)  ? fields[6]  : "";
                         String operatorId = (fields.length > 10) ? fields[10] : "";
                         String tsEnd      = (fields.length > 12) ? fields[12] : "";
+                        
+                        // If analyzer sends a "no value" like "----" token, produce an empty OBX-5
+                        boolean hasNoValue = isNoValueToken(value);
+                        if (hasNoValue) {
+                            value = "";
+                        }
 
                         // Mapping: vendor_result_code = raw analyte field (ASTM R|2)
                         String vendorResultCode = normalizeVendorResultCode(analyte);
@@ -671,8 +712,12 @@ public class AnalyzerSysmex implements Analyzer {
                         String lisUnit = "";
                         String convert = "none";
                         double factor = 0.0;
-                        String vendorUnit = "";
-
+                        
+                        // Mapping lookup (TOML):
+                        // - Uses global mappings when "test" is missing or empty.
+                        // - Matches on vendor_result_code after normalization:
+                        //   trailing "^<digits>" suffixes are removed from both the incoming R-2 code and the TOML vendor_result_code.
+                        //   This keeps mappings stable across dilution/mode suffix variations
                         List<Toml> maps = mappingToml.getTables("ivd_mapping");
                         if (maps != null && !vendorResultCode.isEmpty()) {
                             for (Toml m : maps) {
@@ -694,10 +739,8 @@ public class AnalyzerSysmex implements Analyzer {
 
                                     String cv = m.getString("convert");
                                     convert = (cv == null) ? "none" : cv.trim();
-                                    
-                                    String vu = m.getString("vendor_unit");
-                                    vendorUnit = (vu == null) ? "" : vu.trim();
 
+                                    // factor can be stored as TOML number or string; on parsing errors we fall back to 0.0.
                                     factor = 0.0;
                                     try {
                                         Object factorObj = m.toMap().get("factor");
@@ -718,13 +761,11 @@ public class AnalyzerSysmex implements Analyzer {
                             }
                         }
 
-                        // Override unit from mapping if provided
+                        // If lis_unit is defined in the mapping, it overrides the analyzer-provided unit unconditionally.
                         if (!lisUnit.isEmpty()) {
                             unit = lisUnit;
                         }
-                        
-                        value = stripTrailingUnitFromValue(value, unit, lisUnit, vendorUnit);
-                        
+
                         // Apply conversion if configured and value is numeric
                         if (value != null) {
                             String vtrim = value.trim();
@@ -757,7 +798,7 @@ public class AnalyzerSysmex implements Analyzer {
                                 }
                             }
                         }
-                        
+
                         // Build OBX
                         hl7.append("OBX|")
                            .append(obxIndex).append("|NM|");  // OBX-1, OBX-2
@@ -774,10 +815,11 @@ public class AnalyzerSysmex implements Analyzer {
                            .append(value).append("|")         // OBX-5
                            .append(unit).append("|")          // OBX-6
                            .append("||")                      // OBX-7
-                           .append(flag).append("|")          // OBX-8
+                           .append(flag).append("|||")        // OBX-8
                            .append("F|")                      // OBX-11
                            .append("||")                      // OBX-12/13
                            .append(tsEnd).append("|")         // OBX-14
+                           .append("||")                      // OBX-15
                            .append(operatorId)                // OBX-16
                            .append("\r");
 
@@ -785,8 +827,8 @@ public class AnalyzerSysmex implements Analyzer {
                         break;
 
                     case "C":
-                        // ASTM C record (comment). Map to NTE.
-                        // We'll send 1 NTE per C line.
+                    	// ASTM C record (comment) -> HL7 NTE.
+                        // We emit one NTE per C line. NTE-1 is kept constant ("1") because LabBook does not require sequencing here.
                         String noteTxt = String.join(" ", Arrays.copyOfRange(fields, 1, fields.length));
                         hl7.append("NTE|1|L|")
                            .append(noteTxt)
@@ -909,13 +951,16 @@ public class AnalyzerSysmex implements Analyzer {
      * back into ASTM lines for Sysmex XP.
      *
      * We return minimal Sysmex-friendly ASTM:
-     *  H|\^&|||||||||||E1394-97
+     *  H|\\^&amp;|||||||||||E1394-97
      *  P|1
-     *  O|1||^^<15-char SampleID>^A|^^^^WBC\^^^^RBC\^^^^HGB\^^^^HCT\^^^^PLT|||||||N||||||||||||||F
+     *  O|1||^^{15-char SampleID}^A|^^^^WBC\\^^^^RBC\\^^^^HGB\\^^^^HCT\\^^^^PLT|||||||N||||||||||||||F
      *  L|1|N
      *
      * Note: we try to extract specimen ID from SPM-2. If multiple patients/specimens
      * are in the RSP, we currently only build one block (first hit).
+     * 
+     * @param hl7Message HL7 RSP^K11 message string (ER7)
+     * @return ASTM lines to send to the analyzer
      */
     public static String[] convertRSP_K11toASTM(String hl7Message) {
         // default values
@@ -979,6 +1024,9 @@ public class AnalyzerSysmex implements Analyzer {
      *   "ACK"    = all frames accepted
      *   "ERROR"  = timeout / no ACK after 6 retries
      *   (We keep "NAK"/"UNKNOWN" out, we normalize to "ERROR")
+     *   
+     * @param lines ASTM record lines
+     * @return "ACK" if accepted, otherwise "ERROR"
      */
     public String sendASTMMessage(String[] lines) {
         try {
@@ -1013,7 +1061,7 @@ public class AnalyzerSysmex implements Analyzer {
                 // Build frame body: <frameNo><recordLine>
                 // Frame number cycles 1..7,0 then repeats.
                 // Example: STX '1' H|... ETX CS CS CR LF
-            	String body = ((i + 1) % 8) + lines[i] + "\r";
+                String body = ((i + 1) % 8) + lines[i];
                 byte[] bodyBytes = body.getBytes(StandardCharsets.US_ASCII);
 
                 // Build frame: STX + body + ETX + checksum + CR + LF
@@ -1122,18 +1170,13 @@ public class AnalyzerSysmex implements Analyzer {
     }
     
     /**
-     * Starts the communication listener thread for the analyzer device.
-     * <p>
-     * Depending on the configured connection type, this method initializes a socket connection in client mode
-     * or logs an unsupported configuration message. The connection attempt utilizes exponential backoff
-     * for reconnection attempts, starting with a 5-second delay and doubling the wait time after each failed attempt,
-     * up to a maximum of 1 minute.
-     * <p>
-     * Once connected, the method continuously listens for incoming messages from the analyzer, setting
-     * the internal `listening` state to true upon successful connection. It resets the backoff timer after every successful
-     * connection. In case of connection errors or interruptions, the socket connection will be retried automatically.
-     * <p>
-     * This method runs continuously in a separate thread to avoid blocking the main application flow.
+     * Starts the analyzer I/O loop (client or server mode) in a dedicated daemon thread.
+     *
+     * - Client mode: connects to the analyzer TCP endpoint, runs the E1381 receive loop, and reconnects
+     *   on I/O errors using exponential backoff (5s -> 10s -> ... up to 60s).
+     * - Server mode: listens on the configured TCP port and runs the E1381 receive loop per connection.
+     *
+     * This method loads the mapping TOML once at startup. It does not block the caller thread.
      */
     @Override
     public void listenDevice() {
@@ -1208,14 +1251,10 @@ public class AnalyzerSysmex implements Analyzer {
     }
 
     /**
-     * Establishes a connection to the analyzer in CLIENT mode.
-     * <p>
-     * This method initializes the socket connection using the configured IP address and port of the analyzer.
-     * It sets up input and output streams for subsequent message exchanges (e.g., ASTM transactions).
-     * <p>
-     * If a connection already exists and is open, no action is performed.
+     * Opens the TCP socket and initializes input/output streams (client mode).
+     * If the socket is already open, this method returns without reinitializing streams.
      *
-     * @throws IOException if the connection attempt fails due to network errors or invalid connection parameters.
+     * @throws IOException if the TCP connection fails
      */
     public void connectAsClient() throws IOException {
         if (socket != null && !socket.isClosed()) return;
@@ -1225,7 +1264,9 @@ public class AnalyzerSysmex implements Analyzer {
     }
     
     /**
-     * Starts an ASTM server that listens for incoming ASTM messages.
+     * Server mode main loop.
+     * Creates a ServerSocket on the configured port and processes one client connection at a time.
+     * For each accepted connection, this method runs the ASTM E1381 receive loop until the client disconnects.
      */
     private void startASTMServer() {
     	this.listening.set(true);
@@ -1296,16 +1337,28 @@ public class AnalyzerSysmex implements Analyzer {
     }
 
     /**
-     * Listens for incoming ASTM messages using ASTM E1381 framing.
-     * - STEP 1: Wait ENQ, reply ACK
-     * - STEP 2: Receive frames (STX, frame-no, payload, ETX|ETB, checksum[2], CR, LF)
-     * - STEP 3: Validate checksum on [frame-no + payload + (ETX|ETB)]
-     * - STEP 4: ACK/NAK each frame
-     * - STEP 5: On EOT, dispatch to LAB-27/LAB-29 and optionally turnaround reply
+     * Listens for incoming ASTM messages using E1381-style framing on the current socket connection.
      *
-     * This method handles ONE connection. It must NOT change the listening flag
-     * and must NOT close the server socket, so that startASTMServer() can keep
-     * accepting new clients.
+     * STEP 1: Wait for ENQ from analyzer, reply with ACK.
+     *
+     * STEP 2: Receive one or more frames:
+     *   - STX, frame number, payload
+     *   - ETX or ETB
+     *   - checksum (2 ASCII hex chars), CR, LF
+     *
+     * STEP 3: Validate checksum on [frameNo + payload + ETX/ETB].
+     *   - Reply ACK if checksum is valid.
+     *   - Reply NAK and wait for retransmission if invalid.
+     *
+     * STEP 4: Accumulate payload bytes until EOT is received.
+     *
+     * STEP 5: On EOT, dispatch the assembled ASTM message to LAB-27 or LAB-29.
+     *
+     * STEP 6: If a response is produced, send it by starting a new ASTM send sequence
+     *         (ENQ -> frames -> EOT) using sendASTMMessage().
+     *
+     * This method processes a single TCP connection and returns when the peer disconnects
+     * or when an I/O error occurs.
      */
     private void listenForIncomingMessages() {
         // One connection loop: break to return to startASTMServer()
@@ -1688,39 +1741,25 @@ public class AnalyzerSysmex implements Analyzer {
     }
     
     /**
-     * Strips a trailing unit from a value when the unit is already provided separately.
+     * Detects analyzer "no value" placeholders that must not be forwarded as a result value.
      *
-     * Purpose:
-     * - Prevent duplicated unit display in the LIS UI (value + unit column).
-     * - ASTM sends VALUE and UNIT in separate fields, but some analyzers embed the unit in VALUE.
+     * Some Sysmex outputs use dash tokens (e.g. "----") to indicate that the analyte has
+     * no measurable value. In that case, the plugin must generate an HL7 OBX segment with
+     * an empty OBX-5 (result value) rather than sending the placeholder text.
      *
-     * Rule:
-     * - If value ends with " " + unit (exact match), the unit suffix is removed.
-     * - Otherwise, the value is returned unchanged.
-     *
-     * Examples:
-     * - "6.17 million/mm3" + "million/mm3" -> "6.17"
-     * - "5.33 10³/µL"      + "10³/µL"      -> "5.33"
-     *
-     * This method is intentionally conservative.
+     * @param v Raw value extracted from ASTM R-3 (may be null/blank)
+     * @return true if the value is considered "no value" and must be treated as empty
      */
-    private static String stripTrailingUnitFromValue(String value, String... possibleUnits) {
-        if (value == null) return "";
-        String v = value.trim();
-        if (v.isEmpty()) return v;
+    private static boolean isNoValueToken(String v) {
+        if (v == null) return true;
+        String s = v.trim();
+        if (s.isEmpty()) return true;
 
-        for (String u : possibleUnits) {
-            if (u == null) continue;
-            String unit = u.trim();
-            if (unit.isEmpty()) continue;
+        // Sysmex "no value" markers seen in LIS prints
+        if ("----".equals(s)) return true;
+        if ("---".equals(s)) return true;
+        if ("--".equals(s)) return true;
 
-            String suffix = " " + unit;
-            if (v.length() > suffix.length() && v.endsWith(suffix)) {
-                return v.substring(0, v.length() - suffix.length()).trim();
-            }
-        }
-        return v;
+        return false;
     }
-
-
 }

@@ -3,6 +3,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.0.0] - 2026-02-03
+### Changed
+- Initial stable release of the GeneXpert plugin
+- Added operator README and generated Javadoc
+
+## [0.9.9] - 2026-02-02
+### Fixed
+- Treat analyzer no-value markers as empty results in outgoing HL7
+
 ## [0.9.8] - 2026-01-30
 ### Fixed
 - strip unit suffix from numeric OBX-5 when already present, keep unit only in OBX-6.

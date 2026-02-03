@@ -1,0 +1,23 @@
+# Analyzer Configuration File
+# General settings and connection details for one Sysmex analyzer.
+# This is a sample file.
+# The operator MUST edit this file and set real network values before use.
+
+version = "1.0.0"  # Configuration file version
+
+[analyzer]
+brand = "SYSMEX"                              # Analyzer brand
+name = "XN350"                                # Analyzer model name
+id = "XN350_01"                               # Unique analyzer identifier
+plugin = "AnalyzerSysmex"                     # Plugin Java class name for this analyzer
+url_lis = "http://localhost/sigl"             # LIS upstream endpoint
+operation_mode = "query"                      # Operation mode (batch or query)
+archive_msg = "Y"                             # Enable ('Y') or disable ('N') message archiving
+type_cnx = "socket_E1381"                     # Connection type (ASTM E1381 over TCP socket)
+type_msg = "ASTM"                             # Message type (HL7 or ASTM)
+mapping = "/storage/resource/connect/analyzer/mapping/mapping_sysmex"  # Mapping file path (without .toml)
+
+[analyzer.socket]
+mode = "server"                               # server (validated) or client (experimental)
+ip = "IP_ADDRESS_TO_ENTER"                    # Used ONLY in client mode (ignored in server mode)
+port = 7500                                   # Example value – allowed ranges: 7500–7599, 12300–12399
