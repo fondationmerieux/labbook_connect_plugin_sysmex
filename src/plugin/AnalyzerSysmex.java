@@ -56,7 +56,7 @@ public class AnalyzerSysmex implements Analyzer {
 	
 	private static final Logger logger = LoggerFactory.getLogger(AnalyzerSysmex.class); // Uses Connect's logback.xml
 	
-	private final String jar_version = "1.0.0";
+	private final String jar_version = "1.0.1";
 
     // === General Configuration ===
     protected String version = "";
@@ -814,10 +814,10 @@ public class AnalyzerSysmex implements Analyzer {
                            .append(seq).append("|")           // OBX-4
                            .append(value).append("|")         // OBX-5
                            .append(unit).append("|")          // OBX-6
-                           .append("||")                      // OBX-7
-                           .append(flag).append("|||")        // OBX-8
+                           .append("|")                       // OBX-7
+                           .append(flag).append("|||")        // OBX-8 to OBX-10
                            .append("F|")                      // OBX-11
-                           .append("||")                      // OBX-12/13
+                           .append("||")                      // OBX-12 and OBX-13
                            .append(tsEnd).append("|")         // OBX-14
                            .append("||")                      // OBX-15
                            .append(operatorId)                // OBX-16
