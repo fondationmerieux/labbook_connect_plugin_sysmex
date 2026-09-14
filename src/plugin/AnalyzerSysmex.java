@@ -34,17 +34,22 @@ import ca.uhn.hl7v2.model.v251.segment.SPM;
 import ca.uhn.hl7v2.model.v251.message.ACK;
 
 /**
- * Sysmex analyzer connector for LabBook Connect.
+ * Sysmex analyzer plugin implementation for LabBook Connect.
  *
- * This implementation supports ASTM record exchanges and (optionally) ASTM E1381-style framing
- * over TCP sockets (ENQ/ACK/NAK, STX...ETX/ETB, checksum, CR/LF, EOT).
+ * This class implements bidirectional ASTM communication over TCP sockets, with the E1381
+ * link layer: ENQ/ACK/NAK, STX frames, checksum, EOT.
  *
- * Transactions handled by this plugin:
- * - LAB-27: analyzer query (ASTM Q record) -> HL7 QBP^Q11 -> HL7 RSP^K11 -> ASTM response.
- * - LAB-29: analyzer results (ASTM H/P/O/R/L) -> HL7 OUL^R22 -> HL7 ACK -> ASTM L|1|Y/N.
+ * Supported IHE LAB flows:
+ * - LAB-27: analyzer query (ASTM Q record) -> QBP^Q11 -> RSP^K11 -> ASTM response.
+ * - LAB-28: orders (OML^O33) received from LIS, built in the XN series layout. The XP series
+ *   does not accept orders from the host, its whole "Host computer to analyzer" column reads
+ *   "Not used".
+ * - LAB-29: analyzer results (ASTM H/P/O/R/L) -> OUL^R22 -> HL7 ACK -> ASTM L|1|Y/N.
  *
- * LAB-28 (HL7 order -> ASTM order) is implemented as best-effort and must be validated
- * against the analyzer configuration (Sysmex models differ on host->analyzer order support).
+ * Reference documents. Field numbers such as 9.4.3 and table numbers below refer to one of them,
+ * named explicitly at each use because the two series differ in the host to analyzer direction:
+ * - XP series: "XP series ASTM communication specifications (ASTM E1394-97, E1381-02/95)"
+ * - XN series: "XN series ASTM host interface specification"
  *
  * Notes:
  * - Some Sysmex analyzers prepend record numbers (0..7) before the record type (e.g. "1H|...").
@@ -56,7 +61,7 @@ public class AnalyzerSysmex implements Analyzer {
 	
 	private static final Logger logger = LoggerFactory.getLogger(AnalyzerSysmex.class); // Uses Connect's logback.xml
 	
-	private final String jar_version = "1.0.1";
+	private final String jar_version = "1.0.2";
 
     // === General Configuration ===
     protected String version = "";
@@ -92,6 +97,28 @@ public class AnalyzerSysmex implements Analyzer {
     private static final byte CR = 0x0D;
     private static final byte LF = 0x0A;
     private static final byte ETB = 0x17; // End of Transmission Block (multi-frame continuation)
+
+    // Constants mandated by the Sysmex ASTM communication specifications, XP and XN series
+    // (ASTM E1394-97 over E1381-02). Grouped here so that the values granted to the analyzer
+    // stay consistent across the class.
+
+    /** Maximum text length of a single frame, in characters, framing excluded. */
+    private static final int MAX_FRAME_TEXT = 240;
+
+    /** Maximum number of times the same frame is sent before the message is aborted. */
+    private static final int MAX_FRAME_ATTEMPTS = 6;
+
+    /** Time granted to the peer to answer a frame or an ENQ. */
+    private static final int REPLY_TIMEOUT_MS = 15000;
+
+    /** Time the receiver waits for a frame or an EOT before the link returns to the Neutral State. */
+    private static final int RECEIVE_TIMEOUT_MS = 30000;
+
+    /** Delay required before re-sending an ENQ after a NAK. */
+    private static final int ENQ_RETRY_DELAY_MS = 10000;
+
+    /** Number of link establishment attempts before giving up. */
+    private static final int MAX_ENQ_ATTEMPTS = 3;
     
     /**
      * Default constructor.
@@ -412,9 +439,9 @@ public class AnalyzerSysmex implements Analyzer {
      * Notes:
      *  - Patient demographics (name, DOB, etc.) are ignored by XP series,
      *    so we do not try to send them.
-     *  - O|... must follow XP format:
-     *    O|1||^^{15-char SampleID}^A|^^^^WBC\\^^^^RBC\\...|...|||N...||F
-     *    See XP ASTM spec 9.4.x.
+     *  - O|... follows the XN series layout:
+     *    O|1|^^{SampleID}^B||^^^^WBC\\^^^^RBC\\...||{date}|||||N||||||||||||||Q
+     *    See the XN series specification, Table 16.
      *    
      * @param oml HL7 message string (ER7) OML^O33
      * @return ASTM lines to send to the analyzer
@@ -436,13 +463,11 @@ public class AnalyzerSysmex implements Analyzer {
                 logger.warn("convertOML_O33ToASTM: no SPM / specimen ID found in OML^O33");
             }
 
-            // --- Pad Sample ID to 15 chars right-aligned, as per XP spec (field 9.4.4) ---
-            // XP expects a 15-char ID, padded with spaces or zeros depending on instrument settings.
-            // We'll space-pad on the left so it's right-aligned.
-            // Example in spec: ^^     12345ABCDE^B (spaces before ID).
-            String paddedSampleId = String.format("%15s", specimenId == null ? "" : specimenId);
+            // Sample number sent as it is. Table 16 gives 22 characters as the maximum size of
+            // field 9.4.3, it does not require any padding.
+            String sampleId = (specimenId == null) ? "" : specimenId.trim();
 
-            // --- Build test list field (ASTM 9.4.5 Analysis parameter ID) ---
+            // Universal Test ID, field 9.4.5, repeated analytes separated by "\\"
             // According to XP spec, we send repeated parameters separated by "\".
             // Minimal panel: WBC, RBC, HGB, HCT, PLT (you can extend this list if needed).
             String requestedParams =
@@ -452,26 +477,31 @@ public class AnalyzerSysmex implements Analyzer {
                 "^^^^HCT" + "\\" +
                 "^^^^PLT";
 
-            // --- Action Code (ASTM field 9.4.12) ---
+            // Action Code, field 9.4.12
             // "N" = normal sample data, "Q" = QC data.
             String actionCode = "N";
 
-            // --- O record construction following Sysmex XP format ---
-            // Breakdown:
-            // O|
-            // 1               -> sequence number
-            // |               -> field 9.4.3 "Specimen ID" (not used)
-            // |               -> delimiter to field 9.4.4
-            // ^^<15-charID>^A -> Instrument Specimen ID (Sample ID padded) + Attribute 'A' (auto assign)
-            // |<params>       -> field 9.4.5 repeated analytes (^^^^WBC\^^^^RBC\...)
-            // |||||||N        -> skip unused fields until Action Code "N"
-            // ||||||||||||||F -> Report Type "F" at the end (field 9.4.26)
+            // Order record, host to analyzer direction (Table 16 of the XN series specification).
+            // The XP series does not accept test orders from the host, its whole "Host computer to
+            // analyzer" column reads "Not used", so this layout is the only one to build.
             //
-            // Important: we keep the exact number of pipes so fields line up.
+            // 9.4.3  Specimen ID              Rack^Position^Sample ID^Attribute, rack and position empty
+            // 9.4.4  Instrument Specimen ID   not used in this direction
+            // 9.4.5  Universal Test ID        repeated analytes separated by "\\"
+            // 9.4.7  Requested date and time  yyyyMMddHHmmss
+            // 9.4.12 Action Code              N for a patient sample, Q for a quality control
+            // 9.4.26 Report Type              Q in this direction
+            //
+            // Attribute B stands for a sample number read by the barcode reader, as in the
+            // specification example.
+            String orderedDateTime = new SimpleDateFormat("yyyyMMddHHmmss").format(new Date());
+
             String oRecord =
-                "O|1||^^" + paddedSampleId + "^A|" +
+                "O|1|^^" + sampleId + "^B||" +
                 requestedParams +
-                "|||||||"+ actionCode +"||||||||||||||F";
+                "||" + orderedDateTime +
+                "|||||" + actionCode +
+                "||||||||||||||Q";
 
             // --- Build ASTM lines ---
             // H| per XP when host -> analyzer is basically:
@@ -629,7 +659,8 @@ public class AnalyzerSysmex implements Analyzer {
                         // specimenId is usually fields[2] OR embedded in fields[3] ("^^<SampleID>^A")
                         specimenId = null;
 
-                        // Try classic ASTM 9.4.4 style in fields[3] = "^^<SampleID>^A"
+                        // Incoming order from the analyzer: the specimen sits in field 9.4.4,
+                        // "^^<SampleID>^<attribute>", the same way on both series
                         if (fields.length > 3 && fields[3].startsWith("^^")) {
                             // remove leading "^^"
                             String after2hat = fields[3].substring(2);
@@ -927,9 +958,30 @@ public class AnalyzerSysmex implements Analyzer {
             qpd.getMessageQueryName().getIdentifier().setValue("LAB-27^IHE");
             qpd.getQueryTag().setValue("SYSMEX");
 
-            // Use ASTM field[2] as specimen ID if available
-            if (fields.length > 2) {
-                qpd.getField(3, 0).parse(fields[2]);
+            // Q-3 is a composite field. Both series carry the sample number as component 3:
+            //   XN :  1^1^ABCDE1234567890^B   rack ^ tube position ^ sample ^ attribute
+            //   XP :  ^^12345ABCDE^B                               ^ sample ^ attribute
+            if (fields.length > 2 && fields[2] != null) {
+                String[] comps = fields[2].split("\\^", -1);
+                String specimenId = "";
+
+                if (comps.length > 2 && comps[2] != null && !comps[2].trim().isEmpty()) {
+                    specimenId = comps[2].trim();
+                } else {
+                    // Unexpected shape: fall back to the first non-empty component
+                    for (String c : comps) {
+                        if (c != null && !c.trim().isEmpty()) {
+                            specimenId = c.trim();
+                            break;
+                        }
+                    }
+                    logger.warn("convertASTMQueryToQBP_Q11: Q-3 has no third component ('{}'), "
+                                + "falling back to '{}'", fields[2], specimenId);
+                }
+
+                if (!specimenId.isEmpty()) {
+                    qpd.getField(3, 0).parse(specimenId);
+                }
             }
 
             // Fill RCP (response control parameters)
@@ -979,8 +1031,9 @@ public class AnalyzerSysmex implements Analyzer {
             }
         }
 
-        // pad specimen ID to 15 chars right-aligned like convertOML_O33ToASTM
-        String paddedSampleId = String.format("%15s", specimenId);
+        // Sample number sent as it is. Table 16 gives 22 characters as the maximum size of
+        // field 9.4.3, it does not require any padding.
+        String sampleId = (specimenId == null) ? "" : specimenId.trim();
 
         // same requestedParams we used in convertOML_O33ToASTM()
         String requestedParams =
@@ -995,10 +1048,24 @@ public class AnalyzerSysmex implements Analyzer {
         String hRecord = "H|\\^&|||||||||||E1394-97";
         String pRecord = "P|1";
 
+        // Order record, host to analyzer direction (Table 16 of the XN series specification).
+        // The XP series does not accept test orders from the host, its whole "Host computer to
+        // analyzer" column reads "Not used", so this layout is the only one to build.
+        //
+        // 9.4.3  Specimen ID              Rack^Position^Sample ID^Attribute, rack and position empty
+        // 9.4.4  Instrument Specimen ID   not used in this direction
+        // 9.4.5  Universal Test ID        repeated analytes separated by "\\"
+        // 9.4.7  Requested date and time  yyyyMMddHHmmss
+        // 9.4.12 Action Code              N for a patient sample, Q for a quality control
+        // 9.4.26 Report Type              Q in this direction
+        String orderedDateTime = new SimpleDateFormat("yyyyMMddHHmmss").format(new Date());
+
         String oRecord =
-            "O|1||^^" + paddedSampleId + "^A|" +
+            "O|1|^^" + sampleId + "^B||" +
             requestedParams +
-            "|||||||"+ actionCode +"||||||||||||||F";
+            "||" + orderedDateTime +
+            "|||||" + actionCode +
+            "||||||||||||||Q";
 
         String lRecord = "L|1|N";
 
@@ -1008,140 +1075,61 @@ public class AnalyzerSysmex implements Analyzer {
     // === Communication Management ===
     
     /**
-     * Sends an ASTM message (list of logical records like H|, P|, O|, R|, L|)
-     * using ASTM E1381 framing.
+     * Sends an ASTM message to the analyzer over the active socket.
+     * <p>
+     * The whole message is assembled first, then split into frames of at most
+     * {@link #MAX_FRAME_TEXT} characters. Every record inside the text is terminated by CR,
+     * all frames but the last one end with ETB, only the last one ends with ETX.
+     * <p>
+     * A rejected frame is re-sent up to {@link #MAX_FRAME_ATTEMPTS} times before the message
+     * is aborted. Every abort path goes through the Termination Phase.
      *
-     * Steps (host as sender):
-     * 1. Send ENQ and wait for ACK from analyzer.
-     * 2. For each record line:
-     *    - Build a frame: STX + frameNo + line + ETX + checksum + CR + LF
-     *    - Send frame
-     *    - Wait for ACK/NAK
-     *    - If NAK or timeout, retry SAME frame number up to 6 times
-     * 3. Send EOT to terminate transmission.
-     *
-     * Return values:
-     *   "ACK"    = all frames accepted
-     *   "ERROR"  = timeout / no ACK after 6 retries
-     *   (We keep "NAK"/"UNKNOWN" out, we normalize to "ERROR")
-     *   
-     * @param lines ASTM record lines
-     * @return "ACK" if accepted, otherwise "ERROR"
+     * @param lines ASTM records (H|..., P|..., O|..., L|...)
+     * @return "ACK" if the whole message was accepted, otherwise "ERROR"
      */
     public String sendASTMMessage(String[] lines) {
         try {
-            // --- Phase 1: Establishment (ENQ -> ACK) ---
-            logger.info(">>> Sending ENQ");
-            outputStream.write(ENQ);
-            outputStream.flush();
+            // ETAPE 1 : reconstitution du texte complet, chaque enregistrement termine par CR
+            StringBuilder textBuilder = new StringBuilder();
+            for (String line : lines) {
+                if (line == null) {
+                    continue;
+                }
+                textBuilder.append(line).append((char) CR);
+            }
+            String text = textBuilder.toString();
 
-            socket.setSoTimeout(10000); // 10s max wait for ACK/NAK after ENQ
-            int response;
-            try {
-                response = inputStream.read();
-            } catch (SocketTimeoutException e) {
-                logger.warn("Timeout waiting for ACK after ENQ (10s)");
+            // ETAPE 2 : phase d'etablissement
+            String established = establishLink();
+            if (!"ACK".equals(established)) {
                 return "ERROR";
             }
 
-            if (response == ASTM_ACK) {
-                logger.info("<<< Response after ENQ: ACK");
-            } else if (response == ASTM_NAK) {
-                logger.warn("<<< Response after ENQ: NAK (remote not ready)");
-                // ASTM says: wait >=10s then retry ENQ, etc.
-                // We simplify: treat as error for now.
-                return "ERROR";
-            } else {
-                logger.warn("<<< Unexpected byte after ENQ: {}", response);
-                return "ERROR";
-            }
+            // ETAPE 3 : phase de transfert, par tranches de MAX_FRAME_TEXT caracteres
+            int total = text.length();
+            int offset = 0;
+            int frameNo = 1;
 
-            // --- Phase 2: Transfer (frame loop) ---
-            for (int i = 0; i < lines.length; i++) {
-                // Build frame body: <frameNo><recordLine>
-                // Frame number cycles 1..7,0 then repeats.
-                // Example: STX '1' H|... ETX CS CS CR LF
-                String body = ((i + 1) % 8) + lines[i];
-                byte[] bodyBytes = body.getBytes(StandardCharsets.US_ASCII);
+            logger.info(">>> Sending {} characters in {} frame(s)", total,
+                        (total + MAX_FRAME_TEXT - 1) / MAX_FRAME_TEXT);
 
-                // Build frame: STX + body + ETX + checksum + CR + LF
-                ByteArrayOutputStream frame = new ByteArrayOutputStream();
-                frame.write(STX);
-                frame.write(bodyBytes);
+            do {
+                int len = Math.min(MAX_FRAME_TEXT, total - offset);
+                boolean last = (offset + len) >= total;
+                byte terminator = last ? ETX : ETB;
 
-                // End-of-text marker: we always send ETX here (single-frame / short messages)
-                frame.write(ETX);
-
-                // Compute checksum on [frameNo + payload + ETX]
-                int checksum = 0;
-                for (byte b : bodyBytes) {
-                    checksum += (b & 0xFF);
-                }
-                checksum += (ETX & 0xFF);
-                checksum &= 0xFF;
-
-                String checksumStr = String.format("%02X", checksum);
-
-                frame.write(checksumStr.getBytes(StandardCharsets.US_ASCII));
-                frame.write(CR);
-                frame.write(LF);
-
-                byte[] frameBytes = frame.toByteArray();
-
-                // Retry logic:
-                // ASTM E1381: if receiver returns NAK, we MUST resend the same frame number.
-                // Max 6 consecutive attempts. After that we abort.
-                boolean sentOk = false;
-
-                for (int attempt = 1; attempt <= 6; attempt++) {
-                    logger.info(">>> Sending frame {} attempt {}/6 : {}", (i + 1), attempt, lines[i]);
-                    outputStream.write(frameBytes);
-                    outputStream.flush();
-
-                    socket.setSoTimeout(10000); // 10s max wait for ACK/NAK
-
-                    int frameResp;
-                    try {
-                        frameResp = inputStream.read();
-                    } catch (SocketTimeoutException e) {
-                        logger.warn("Timeout waiting for ACK after frame {} attempt {}", (i + 1), attempt);
-                        frameResp = -1; // treat as "no ACK", will retry
-                    }
-
-                    if (frameResp == ASTM_ACK) {
-                        logger.info("<<< Frame {} accepted (ACK)", (i + 1));
-                        sentOk = true;
-                        break; // go send next frame
-                    }
-
-                    if (frameResp == ASTM_NAK) {
-                        logger.warn("<<< Frame {} got NAK, will retry same frame number", (i + 1));
-                        // loop continues -> retry SAME frame
-                        continue;
-                    }
-
-                    // Any unexpected byte or -1 => retry
-                    logger.warn("<<< Frame {} unexpected byte {} (will retry same frame)", (i + 1), frameResp);
-                    // continue loop without setting sentOk
-                }
-
-                // If after 6 tries still not ACKed -> abort transmission
-                if (!sentOk) {
-                    logger.error("Failed to send frame {} after 6 attempts, aborting transmission", (i + 1));
-
-                    // Send EOT to terminate as per ASTM termination phase
-                    logger.info(">>> Sending EOT (abort)");
-                    outputStream.write(EOT);
-                    outputStream.flush();
-
+                String result = sendFrame(frameNo, text, offset, len, terminator);
+                if (!"ACK".equals(result)) {
+                    terminateLink();
                     return "ERROR";
                 }
-            }
 
-            // --- Phase 3: Termination (EOT) ---
-            logger.info(">>> Sending EOT (normal end)");
-            outputStream.write(EOT);
-            outputStream.flush();
+                offset += len;
+                frameNo = (frameNo + 1) % 8;
+            } while (offset < total);
+
+            // ETAPE 4 : phase de terminaison
+            terminateLink();
 
             return "ACK";
 
@@ -1150,7 +1138,152 @@ public class AnalyzerSysmex implements Analyzer {
             return "ERROR";
         }
     }
-    
+
+    /**
+     * Establishment Phase.
+     * <p>
+     * Waits {@link #REPLY_TIMEOUT_MS} for the analyzer to answer the ENQ. On NAK, waits
+     * {@link #ENQ_RETRY_DELAY_MS} and sends a new ENQ, up to {@link #MAX_ENQ_ATTEMPTS} times.
+     *
+     * @return "ACK" once the link is established, otherwise "ERROR"
+     * @throws IOException on network error
+     */
+    private String establishLink() throws IOException {
+        for (int attempt = 1; attempt <= MAX_ENQ_ATTEMPTS; attempt++) {
+            logger.info(">>> Sending ENQ (attempt {}/{})", attempt, MAX_ENQ_ATTEMPTS);
+            outputStream.write(ENQ);
+            outputStream.flush();
+
+            socket.setSoTimeout(REPLY_TIMEOUT_MS);
+
+            int response;
+            try {
+                response = inputStream.read();
+            } catch (SocketTimeoutException e) {
+                logger.warn("Timeout waiting for a reply to ENQ ({} ms)", REPLY_TIMEOUT_MS);
+                return "ERROR";
+            }
+
+            if (response == ASTM_ACK) {
+                logger.info("<<< ACK - link established");
+                return "ACK";
+            }
+
+            if (response == ASTM_NAK) {
+                logger.warn("<<< NAK after ENQ, waiting {} ms before a new attempt", ENQ_RETRY_DELAY_MS);
+                sleepQuietly(ENQ_RETRY_DELAY_MS);
+                continue;
+            }
+
+            logger.warn("<<< Unexpected byte after ENQ: {}", printable(response));
+            return "ERROR";
+        }
+
+        logger.error("Link not established after {} attempts", MAX_ENQ_ATTEMPTS);
+        return "ERROR";
+    }
+
+    /**
+     * Sends one frame and handles its retransmission.
+     * <p>
+     * A rejected frame is re-sent with the same frame number, and the transfer is aborted only
+     * after {@link #MAX_FRAME_ATTEMPTS} consecutive rejections.
+     *
+     * @param frameNo    frame number (0-7)
+     * @param text       full message text
+     * @param offset     start of the slice within {@code text}
+     * @param len        slice length
+     * @param terminator {@code ETB} (intermediate frame) or {@code ETX} (end frame)
+     * @return "ACK" if the frame was accepted, otherwise "ERROR"
+     * @throws IOException on network error
+     */
+    private String sendFrame(int frameNo, String text, int offset, int len, byte terminator)
+            throws IOException {
+
+        String chunk = text.substring(offset, offset + len);
+        byte[] chunkBytes = chunk.getBytes(StandardCharsets.US_ASCII);
+        byte[] frameNoBytes = String.valueOf(frameNo).getBytes(StandardCharsets.US_ASCII);
+
+        ByteArrayOutputStream frame = new ByteArrayOutputStream();
+        frame.write(STX);
+        frame.write(frameNoBytes);
+        frame.write(chunkBytes);
+        frame.write(terminator);
+
+        // Somme de controle sur [numero de trame + texte + terminateur], modulo 256
+        int checksum = 0;
+        for (byte b : frameNoBytes) {
+            checksum += (b & 0xFF);
+        }
+        for (byte b : chunkBytes) {
+            checksum += (b & 0xFF);
+        }
+        checksum += (terminator & 0xFF);
+        checksum &= 0xFF;
+
+        frame.write(String.format("%02X", checksum).getBytes(StandardCharsets.US_ASCII));
+        frame.write(CR);
+        frame.write(LF);
+
+        byte[] frameBytes = frame.toByteArray();
+
+        for (int attempt = 1; attempt <= MAX_FRAME_ATTEMPTS; attempt++) {
+            logger.info(">>> Frame {} ({} characters, {}) attempt {}/{}",
+                        frameNo, len, (terminator == ETX ? "ETX" : "ETB"), attempt, MAX_FRAME_ATTEMPTS);
+
+            outputStream.write(frameBytes);
+            outputStream.flush();
+
+            socket.setSoTimeout(REPLY_TIMEOUT_MS);
+
+            int reply;
+            try {
+                reply = inputStream.read();
+            } catch (SocketTimeoutException e) {
+                logger.warn("Timeout waiting for a reply to frame {}", frameNo);
+                reply = -1;
+            }
+
+            if (reply == ASTM_ACK) {
+                return "ACK";
+            }
+
+            if (reply == ASTM_NAK) {
+                logger.warn("<<< NAK on frame {} - retransmitting with the same number", frameNo);
+            } else {
+                logger.warn("<<< Unexpected byte after frame {}: {} - retransmitting", frameNo, printable(reply));
+            }
+        }
+
+        logger.error("Frame {} rejected {} times - aborting message", frameNo, MAX_FRAME_ATTEMPTS);
+        return "ERROR";
+    }
+
+    /**
+     * Termination Phase. Sends EOT to return the link to the Neutral State, where either side
+     * may take the initiative again. Called from every abort path so that the link is never
+     * left taken.
+     *
+     * @throws IOException on network error
+     */
+    private void terminateLink() throws IOException {
+        logger.info(">>> Sending EOT");
+        outputStream.write(EOT);
+        outputStream.flush();
+    }
+
+    /**
+     * Sleeps without propagating the interruption as an exception, for the delays mandated by
+     * the specification.
+     */
+    private void sleepQuietly(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
     /**
      * Gets the mapping configuration path.
      * @return The mapping configuration path.
@@ -1371,7 +1504,9 @@ public class AnalyzerSysmex implements Analyzer {
 
             try {
                 // STEP 1: Wait for ENQ (15s)
-                socket.setSoTimeout(15000);
+                // The receiver is granted RECEIVE_TIMEOUT_MS before the link is considered back
+                // in the Neutral State.
+                socket.setSoTimeout(RECEIVE_TIMEOUT_MS);
 
                 int firstByte;
                 try {
@@ -1400,6 +1535,10 @@ public class AnalyzerSysmex implements Analyzer {
 
                 // STEP 3: Receive frames until EOT
                 ByteArrayOutputStream assembledMessage = new ByteArrayOutputStream();
+
+                // Frame numbering restarts at 1 for each transfer, so the sequence check is reset
+                // at every Establishment Phase.
+                int lastAcceptedFrame = -1;
 
                 framesLoop:
                 while (true) {
@@ -1474,10 +1613,35 @@ public class AnalyzerSysmex implements Analyzer {
                         outputStream.flush();
                         // Wait for retransmission of the same frame; do not append
                         continue;
-                    } else {
-                        outputStream.write(ASTM_ACK);
-                        outputStream.flush();
                     }
+
+                    // Frame number check. A frame is accepted only when it carries the number of
+                    // the last accepted frame (a retransmission after a NAK) or the next one
+                    // modulo 8.
+                    //
+                    // A retransmission is acknowledged but not appended again, otherwise the
+                    // reassembled message would silently contain a duplicated fragment.
+                    int frameDigit = frameNo - '0';
+                    int expectedFrame = (lastAcceptedFrame < 0) ? -1 : (lastAcceptedFrame + 1) % 8;
+
+                    if (lastAcceptedFrame >= 0 && frameDigit != lastAcceptedFrame && frameDigit != expectedFrame) {
+                        logger.warn("Frame number {} rejected, expected {} or {}",
+                                    frameDigit, lastAcceptedFrame, expectedFrame);
+                        outputStream.write(ASTM_NAK);
+                        outputStream.flush();
+                        continue;
+                    }
+
+                    outputStream.write(ASTM_ACK);
+                    outputStream.flush();
+
+                    if (frameDigit == lastAcceptedFrame) {
+                        // Legitimate retransmission: acknowledge it, but do not append it again.
+                        logger.info("Frame {} already accepted, acknowledged without appending", frameDigit);
+                        continue;
+                    }
+
+                    lastAcceptedFrame = frameDigit;
 
                     // Append frame payload; payload already contains CR between ASTM records
                     assembledMessage.write(payloadBytes);

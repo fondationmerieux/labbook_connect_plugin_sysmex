@@ -1,8 +1,8 @@
 [livd_publication]
 publisher = "AEGLE (local mapping)"
 document_identifier = "sysmex_xn350"
-publication_version_id = "1.0"
-publication_date = "2026-01-19"
+publication_version_id = "1.1"
+publication_date = "2026-09-14"
 
 # Only the tests explicitly listed below are supported.
 # Additional tests and result mappings must be added as needed.
@@ -239,7 +239,7 @@ factor = 0
 [[ivd_mapping]]
 test = ""
 vendor_result_code = "^^^^MICROR"
-lis_result_code = "MICROR"
+lis_result_code = "886"
 vendor_unit = "%"
 lis_unit = "%"
 convert = "none"
@@ -248,7 +248,7 @@ factor = 0
 [[ivd_mapping]]
 test = ""
 vendor_result_code = "^^^^MACROR"
-lis_result_code = "MACROR"
+lis_result_code = "887"
 vendor_unit = "%"
 lis_unit = "%"
 convert = "none"
@@ -275,7 +275,7 @@ factor = 0
 [[ivd_mapping]]
 test = ""
 vendor_result_code = "^^^^P-LCR"
-lis_result_code = "P-LCR"
+lis_result_code = "845"
 vendor_unit = "%"
 lis_unit = "%"
 convert = "none"
@@ -293,7 +293,7 @@ factor = 0
 [[ivd_mapping]]
 test = ""
 vendor_result_code = "^^^^RET#"
-lis_result_code = "RET#"
+lis_result_code = "849"
 vendor_unit = "10*6/uL"
 lis_unit = "10⁶/µL"
 convert = "none"
@@ -311,7 +311,7 @@ factor = 0
 [[ivd_mapping]]
 test = ""
 vendor_result_code = "^^^^IRF"
-lis_result_code = "IRF"
+lis_result_code = "852"
 vendor_unit = "%"
 lis_unit = "%"
 convert = "none"
@@ -320,7 +320,7 @@ factor = 0
 [[ivd_mapping]]
 test = ""
 vendor_result_code = "^^^^RET-HE"
-lis_result_code = "RET-HE"
+lis_result_code = "864"
 vendor_unit = "pg"
 lis_unit = "pg"
 convert = "none"
@@ -329,7 +329,7 @@ factor = 0
 [[ivd_mapping]]
 test = ""
 vendor_result_code = "^^^^RBC-HE"
-lis_result_code = "RBC-HE"
+lis_result_code = "868"
 vendor_unit = "pg"
 lis_unit = "pg"
 convert = "none"
@@ -338,7 +338,7 @@ factor = 0
 [[ivd_mapping]]
 test = ""
 vendor_result_code = "^^^^DELTA-HE"
-lis_result_code = "DELTA-HE"
+lis_result_code = "863"
 vendor_unit = "pg"
 lis_unit = "pg"
 convert = "none"
@@ -347,7 +347,7 @@ factor = 0
 [[ivd_mapping]]
 test = ""
 vendor_result_code = "^^^^HYPO-HE"
-lis_result_code = "HYPO-HE"
+lis_result_code = "857"
 vendor_unit = "%"
 lis_unit = "%"
 convert = "none"
@@ -356,44 +356,65 @@ factor = 0
 [[ivd_mapping]]
 test = ""
 vendor_result_code = "^^^^HYPER-HE"
-lis_result_code = "HYPER-HE"
+lis_result_code = "858"
 vendor_unit = "%"
 lis_unit = "%"
 convert = "none"
 factor = 0
 
-[[ivd_mapping]]
-test = ""
-vendor_result_code = "^^^^Neutrophilia"
-lis_result_code = "Neutrophil"
-vendor_unit = ""
-lis_unit = ""
-convert = "none"
-factor = 0
+# [[ivd_mapping]]
+# test = ""
+# vendor_result_code = "^^^^Neutrophilia"
+# lis_result_code = "Neutrophil"
+# vendor_unit = ""
+# lis_unit = ""
+# convert = "none"
+# factor = 0
 
-[[ivd_mapping]]
-test = ""
-vendor_result_code = "^^^^Lymphopenia"
-lis_result_code = "Lymphopeni"
-vendor_unit = ""
-lis_unit = ""
-convert = "none"
-factor = 0
+# [[ivd_mapping]]
+# test = ""
+# vendor_result_code = "^^^^Lymphopenia"
+# lis_result_code = "Lymphopeni"
+# vendor_unit = ""
+# lis_unit = ""
+# convert = "none"
+# factor = 0
 
-[[ivd_mapping]]
-test = ""
-vendor_result_code = "^^^^PLT_Clumps?"
-lis_result_code = "PLT_Clumps"
-vendor_unit = ""
-lis_unit = ""
-convert = "none"
-factor = 0
+# [[ivd_mapping]]
+# test = ""
+# vendor_result_code = "^^^^PLT_Clumps?"
+# lis_result_code = "PLT_Clumps"
+# vendor_unit = ""
+# lis_unit = ""
+# convert = "none"
+# factor = 0
 
-[[ivd_mapping]]
-test = ""
-vendor_result_code = "^^^^Blasts/Abn_Lympho?"
-lis_result_code = "Blasts/Abn"
-vendor_unit = ""
-lis_unit = ""
-convert = "none"
-factor = 0
+# [[ivd_mapping]]
+# test = ""
+# vendor_result_code = "^^^^Blasts/Abn_Lympho?"
+# lis_result_code = "Blasts/Abn"
+# vendor_unit = ""
+# lis_unit = ""
+# convert = "none"
+# factor = 0
+
+# -----------------------------------------------------------------------------
+# The four alarms above are commented out: the NFS_XN3 referential holds no
+# variable for them, so their results would never attach to a field.
+#
+# Variables of NFS_XN3 that no entry covers. The LabBook code is certain, it
+# comes from the referential; the analyzer code has to be confirmed against a
+# real trace before writing an entry for them.
+#
+#   846      NRBC#
+#   NRBC%    NRBC%
+#   LFR      LFR
+#   MFR      MFR
+#   HFR      HFR
+#   881      Hypo% (HGB<17)
+#   882      Hyper% (HGB>41)
+#   898      Immature Platelet Fraction
+#   910      Immature Platelet Count
+#
+# The variable 837, "Numeration globulaire", is a label and carries no value.
+# -----------------------------------------------------------------------------

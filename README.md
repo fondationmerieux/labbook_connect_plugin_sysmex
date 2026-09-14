@@ -1,7 +1,7 @@
 # Sysmex – LabBook Connect plugin
 
 This plugin enables communication between a Sysmex analyzer and LabBook.
-The analyzer communicates using ASTM only; HL7 is used exclusively toward the LIS.
+The analyzer communicates using ASTM only, HL7 being used toward the LIS alone.
 
 ## Installation note
 
@@ -16,9 +16,19 @@ The analyzer setting file is a sample and MUST be edited before use
 
 Do not deploy the bundle as a single directory.
 
+## Compatible models
+
+| Models | Transactions |
+|---|---|
+| XN series | query, orders and results |
+| XP series | query and results, the series does not accept orders from the LIS |
+
+Based on the ASTM communication specifications of both series.
+
 ## Communication protocols
 
-- Analyzer ↔ LabBook Connect: ASTM E1381 over TCP socket
+- Analyzer ↔ LabBook Connect: ASTM E1381 over TCP socket, as specified in the Sysmex XP series
+  and XN series ASTM communication specifications (ASTM E1394-97 over E1381-02)
 - LabBook Connect ↔ LIS: HL7 v2.5.1 (HTTP)
 
 ## Supported transactions
@@ -32,6 +42,10 @@ Do not deploy the bundle as a single directory.
 
 - LAB-29 (Results)  
   ASTM (from analyzer) → HL7 OUL^R22 (to LIS)
+
+Test orders sent to the analyzer, LAB-27 and LAB-28, follow the XN series layout. The XP series
+does not accept orders from the host, its whole "Host computer to analyzer" column reads
+"Not used", so only results reach the LIS on that series.
 
 ## Deployment modes
 
@@ -98,11 +112,37 @@ Subdirectories:
 Messages are saved as plain text files.
 Filenames include the transaction type, message source (Analyzer or LIS), and a timestamp.
 
+## Testing without an instrument
+
+`script/simulate_sysmex.py` plays the part of the instrument. It connects to the plugin the way
+an analyzer does, speaks ASTM E1381 in both directions, and reports what the plugin answered.
+
+```bash
+python3 script/simulate_sysmex.py --host <connect host> --port <analyzer port> \
+        --scenario results --specimen 1535
+```
+
+The port is the one set in the analyzer settings file, not a fixed value.
+
+| Scenario | What the instrument sends | What it checks |
+|---|---|---|
+| `results` | a complete blood count, 40 analytes over 11 frames | multi-frame splitting, mapping of every analyte |
+| `qc` | a BACKGROUNDCHECK quality control run | that it is archived and not forwarded to the LIS |
+| `query` | an order request | that the sample number is extracted from the composite field |
+
+The result values come from a real XN-350 trace. The analyte list follows the mapping file, not
+the LIS referential: an analyte that does not reach the record points at a `lis_result_code` with
+no matching `code_var` on that installation.
+
+The script also checks the reply and warns when something does not follow the specification:
+frame numbers out of order, wrong checksums, a termination code other than the one expected.
+
+Two options help during troubleshooting. `--nak-frame N` rejects frame N once, so that the plugin
+has to send it again. `--verbose` prints the raw frames.
+
 ## Limitations
 
-- No automatic frame retransmission on ASTM NAK (send side).
 - Client mode is experimental.
-- RSP^K11 responses always terminate with L|1|N.
 
 ## Versioning
 

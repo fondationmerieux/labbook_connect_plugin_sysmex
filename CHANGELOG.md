@@ -3,6 +3,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.0.2] - 2026-09-14
+### Changed
+- A refused connection is tried again instead of stopping the transfer
+- Waiting times follow the specification, 15 seconds for a reply and 30 for a message
+- A transfer that stops always closes the link, which is never left busy
+
+### Fixed
+- Long messages are cut into frames the way the specification asks
+- A frame sent again is no longer counted twice, and frames out of order are refused
+- The sample number of a query was read from the wrong part of the field
+- The sample number was sent to the analyzer with extra spaces in front of it
+- Orders sent to the analyzer follow the XN layout, the XP series accepts none
+
 ## [1.0.1] - 2026-07-28
 ### Fixed
 - HL7 OBX field alignment in Sysmex result message generation (OBX-8/11/14 positioning)
