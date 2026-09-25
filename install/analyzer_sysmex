@@ -1,0 +1,21 @@
+# Analyzer Configuration File
+# Contains general settings and connection details for one ROCHE analyzer.
+
+version = "0.9.1"  # Configuration file version
+
+[analyzer]
+brand = "SYSMEX"                   		# Analyzer brand
+name = "XN-350"                    	 	# Analyzer model name
+id = "15735"                     		# Unique analyzer identifier
+plugin = "AnalyzerSysmex"               	# Plugin Java class name for this analyzer
+url_lis = "http://localhost/sigl"	        # URL of the Laboratory Information System (LIS) upstream endpoint
+operation_mode = "query"          		# Operation mode (batch or query)
+archive_msg = "Y"                 		# Enable ('Y') or disable ('N') message archiving
+type_cnx = "socket_E1381"               	# Connection type (socket, ...)
+type_msg = "ASTM"                  		# Message type (HL7 or ASTM)
+mapping = "/storage/resource/connect/analyzer/mapping/mapping_sysmex"  # Mapping configuration to use
+
+[analyzer.socket]
+mode = "server"                   # Socket mode (client or server)
+ip = "192.168.10.50"              # Analyzer IP address
+port = 5000			  # Port number for socket communication
